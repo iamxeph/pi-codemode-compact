@@ -1,0 +1,54 @@
+{
+  "name": "pi-codemode-compact",
+  "version": "0.1.0",
+  "description": "Compact single-line summary renderer for Pi's codemode tool",
+  "main": "index.ts",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/iamxeph/pi-codemode-compact.git"
+  },
+  "homepage": "https://github.com/iamxeph/pi-codemode-compact#readme",
+  "bugs": {
+    "url": "https://github.com/iamxeph/pi-codemode-compact/issues"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "packageManager": "pnpm@12.3.4",
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "files": [
+    "index.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --import ./tests/hooks.mjs ./tests/codemode-compact.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "pi",
+    "pi-package",
+    "pi-coding-agent",
+    "codemode",
+    "extension",
+    "renderer",
+    "compact",
+    "tui"
+  ],
+  "license": "MIT",
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": ">=0.99.0",
+    "@earendil-works/pi-tui": ">=0.99.0"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.99.1",
+    "@earendil-works/pi-tui": "^0.99.1",
+    "@types/node": "^26.6.3",
+    "typescript": "^7.0.2"
+  }
+}

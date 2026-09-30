@@ -4,6 +4,7 @@ node_modules/
 # Agent local skills & credentials (do not commit)
 .agents/
 .agent/
+AGENTS.md
 
 # Build artifacts
 dist/

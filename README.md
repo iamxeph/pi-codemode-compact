@@ -60,23 +60,6 @@ Registration is deferred to the first `session_start` so the built-in `codemode`
 
 ---
 
-## Development & Testing
-
-Clone the repository and run tests:
-
-```bash
-# Install dependencies
-pnpm install
-
-# Run assertion test suite
-pnpm test
-
-# Check TypeScript types
-pnpm run typecheck
-```
-
----
-
 ## License
 
 MIT

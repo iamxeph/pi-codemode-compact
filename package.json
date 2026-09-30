@@ -19,12 +19,14 @@
   "pi": {
     "extensions": [
       "./index.ts"
-    ]
+    ],
+    "image": "./assets/pi-codemode-compact.webp"
   },
   "files": [
     "index.ts",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "assets"
   ],
   "scripts": {
     "test": "node --import ./tests/hooks.mjs ./tests/codemode-compact.test.ts",

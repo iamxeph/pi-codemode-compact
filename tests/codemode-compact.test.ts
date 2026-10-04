@@ -6,7 +6,7 @@
 //   2) Result parsing: splitScriptOutput / errorLine (handling pi header + body shapes)
 //   3) Single-line formatting: callLine / resultLine / runningLine (user-visible summaries)
 //   4) pi component renderers: renderCall / renderResult (called with real argument shapes)
-//   5) Extension wiring: registering tool definition with custom renderers and API delegation
+//   5) Extension wiring: registering a renderer resolver that overrides codemode drawing only
 //
 // Contract established in layer 4:
 //   pi passes { content, details } in result; failure status is supplied exclusively via context.isError.
@@ -520,82 +520,58 @@ async function run() {
 	});
 
 	// ── 5. Extension Wiring ──────────────────────────────────────────────────
-	await check("wiring: defers registration to session_start, then injects custom renderers via Proxy", () => {
-		const registered: any[] = [];
-		const appended: any[] = [];
-		let onSessionStart: (() => void) | undefined;
+	await check("wiring: registers a renderer resolver and draws codemode compactly", () => {
+		let resolver: ((toolName: string, next: () => any) => any) | undefined;
 		codemodeCompact({
-			registerTool: (definition: any) => registered.push(definition),
-			on: (event: string, handler: () => void) => {
-				if (event === "session_start") onSessionStart = handler;
-			},
-			appendEntry: (customType: string, data: unknown) => appended.push([customType, data]),
-			getSettings: () => ({ codemode: { mode: "only" } }),
+			registerToolRenderer: (r: typeof resolver) => { resolver = r; },
 			getAllTools: () => [{ name: "read" }, { name: "bash" }],
 		} as never);
 
-		assert.equal(registered.length, 0, "Nothing registered at load time (prevents built-in replacement warning)");
-		assert.equal(typeof onSessionStart, "function", "Subscribes to session_start");
-		onSessionStart?.();
-		assert.equal(registered.length, 1, "Registered exactly once");
-		onSessionStart?.();
-		assert.equal(registered.length, 1, "Repeated session starts do not re-register");
-		const definition = registered[0];
-		assert.equal(definition.name, "codemode");
-		assert.equal(typeof definition.execute, "function", "Execution implementation preserved from pi factory");
-		assert.equal(typeof definition.renderCall, "function");
-		assert.equal(typeof definition.renderResult, "function");
-		assert.equal(definition.defaultActive, false, "Preserves defaultActive contract");
-		// Verify delegated API calls
-		assert.equal(definition.prepareLoadout().descriptions.codemode, "only/2", "getSettings and getAllTools forwarded");
-		definition.persistStore("codemode-store", { set: {}, delete: [] });
-		assert.deepEqual(appended, [["codemode-store", { set: {}, delete: [] }]], "appendEntry forwarded");
+		assert.equal(typeof resolver, "function", "Registers a renderer resolver");
+		// Other tools fall through untouched: nothing is re-registered or replaced.
+		const base = { renderCall: "base_call", renderResult: "base_result" };
+		assert.equal(resolver!("bash", () => base), base, "Non-codemode tools receive next() verbatim");
+
+		const renderers = resolver!("codemode", () => base);
+		assert.equal(typeof renderers.renderCall, "function");
+		assert.equal(typeof renderers.renderResult, "function");
+		assert.equal(
+			firstLine(renderers.renderCall({ code: "const tools = [];\ntools.push(1);\nawait tools.read({});" }, theme, renderCtx())),
+			"codemode read · 3 lines",
+		);
+		assert.equal(
+			firstLine(renderers.renderResult({
+				content: [{ type: "text", text: HEADER_OK + "hello" }],
+				details: { calls: [call("read", "ok")] },
+			}, { expanded: false, isPartial: false }, theme, renderCtx())),
+			"✓ read · 1 line · 0.1s",
+		);
 	});
 
-	await check("wiring: tool name guard ensures auxiliary tools are not polluted by codemode renderers", () => {
-		const registered: any[] = [];
-		const fakePi = {
-			registerTool: (d: any) => registered.push(d),
-			appendEntry: () => {},
-			getSettings: () => ({}),
+	await check("wiring: preserves renderer slots supplied by the registered definition", () => {
+		let resolver: ((toolName: string, next: () => any) => any) | undefined;
+		codemodeCompact({
+			registerToolRenderer: (r: typeof resolver) => { resolver = r; },
 			getAllTools: () => [],
-		};
+		} as never);
 
-		// Simulate factory registering an auxiliary helper tool
-		const originalFactory = () => (shim: any) => {
-			shim.registerTool({ name: "codemode", execute: () => {} });
-			shim.registerTool({ name: "codemode_aux", execute: () => {}, renderCall: "original_aux" });
-		};
-
-		// Run wiring with fake factory
-		const shim = new Proxy(fakePi, {
-			get: (target, key) => key === "registerTool"
-				? (definition: any) => {
-						const withRenderers = definition.name === "codemode"
-							? { ...definition, renderCall: "compact" }
-							: definition;
-						return fakePi.registerTool(withRenderers);
-					}
-				: Reflect.get(target, key),
-		});
-
-		originalFactory()(shim);
-
-		assert.equal(registered.length, 2);
-		assert.equal(registered[0].renderCall, "compact", "codemode receives compact renderer");
-		assert.equal(registered[1].renderCall, "original_aux", "auxiliary tool retains its own renderer");
+		const renderers = resolver!("codemode", () => ({ renderShell: "self" }));
+		assert.equal(renderers.renderShell, "self", "renderShell from next() survives the override");
+		assert.equal(typeof renderers.renderCall, "function", "Compact renderCall still wins");
+		assert.equal(
+			resolver!("codemode_aux", () => ({ renderCall: "original_aux" })).renderCall,
+			"original_aux",
+			"Auxiliary tools keep their own renderers",
+		);
 	});
 
 	await check("wiring: handles getAllTools throwing without crashing renderer", () => {
-		const registered: any[] = [];
+		let resolver: ((toolName: string, next: () => any) => any) | undefined;
 		codemodeCompact({
-			registerTool: (d: any) => registered.push(d),
-			on: (_event: string, handler: () => void) => handler(),
-			appendEntry: () => {},
-			getSettings: () => ({ codemode: { mode: "on" } }),
+			registerToolRenderer: (r: typeof resolver) => { resolver = r; },
 			getAllTools: () => { throw new Error("tools registry not ready"); },
 		} as never);
-		const comp = registered[0].renderCall(
+		const comp = resolver!("codemode", () => undefined).renderCall(
 			{ code: "const tools = [];\ntools.push(1);\nawait tools.read({});" },
 			theme,
 			renderCtx(),

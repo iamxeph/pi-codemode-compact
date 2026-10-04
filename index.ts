@@ -12,13 +12,11 @@
  *
  * Expanding (Ctrl+O) reveals syntax-highlighted code, per-call timings, models cost, errors, and full output.
  *
- * Wiring: We invoke pi's createCodemodeExtension() to keep all default behaviors (execution, store
- * persistence, models API, namespaces) while intercepting registerTool via a Proxy shim to inject our
- * compact renderers. Registration is deferred to the first session_start: registering `codemode` at
- * load time makes pi omit the replaceable built-in `codemode` extension and print a replacement warning.
- * The late registration still wins: extension tools override built-in ones in the session tool registry,
- * and file extensions load before built-in extensions (ExtensionRunner.getAllRegisteredTools keeps the
- * first definition per name).
+ * Wiring: We register a renderer resolver (pi.registerToolRenderer, pi >= 1.0.1) that attaches the compact
+ * renderers to the `codemode` tool by name. The built-in extension's definition (execution, store
+ * persistence, models API, namespaces) stays untouched, so nothing is re-registered: no replacement
+ * warning, no mid-session tool redefinition, and the renderers apply no matter which extension or SDK
+ * factory registered `codemode` (resolvers fall back to the registered renderers via next()).
  *
  * Known design trade-offs (static analysis approximation):
  * - Tool preview in callLine uses lightweight regex-based static analysis rather than a full JS AST parser:
@@ -27,7 +25,6 @@
  * - Authoritative, exact execution history, timings, and cost are always reported in resultLine via details.calls.
  */
 import {
-	createCodemodeExtension,
 	highlightCode,
 	type AgentToolResult,
 	type CodemodeToolDetails,
@@ -427,31 +424,17 @@ export function renderResult(
 }
 
 export default function codemodeCompact(pi: ExtensionAPI): void {
-	const renderers = {
-		renderCall: (args: { code?: unknown } | undefined, theme: Theme, context: RenderContext) =>
-			renderCall(args, theme, context, registeredToolNames(pi)),
-		renderResult: (result: CodemodeRenderResult, options: ToolRenderResultOptions, theme: Theme, context: RenderContext) =>
-			renderResult(result, options, theme, context),
-	};
-	const shim = new Proxy(pi, {
-		get: (target, key) => key === "registerTool"
-			? (definition: ToolDefinition) => {
-					// Only the codemode definition receives compact renderers;
-					// any auxiliary tool registered by the factory retains its own renderers.
-					const tool = definition.name === "codemode"
-						? { ...definition, ...renderers }
-						: definition;
-					return pi.registerTool(tool as never);
+	// Resolvers run in extension load order and next() returns what the remaining resolvers, then the
+	// registered tool, would draw. Returning our renderers overrides only the slots we define;
+	// spreading next() preserves any other slot (renderShell) another definition supplies.
+	pi.registerToolRenderer((toolName, next) =>
+		toolName === "codemode"
+			? {
+					...next(),
+					renderCall: (args: unknown, theme: Theme, context: RenderContext) =>
+						renderCall(args as { code?: unknown } | undefined, theme, context, registeredToolNames(pi)),
+					renderResult: (result, options, theme, context) =>
+						renderResult(result as unknown as CodemodeRenderResult, options, theme, context),
 				}
-			: Reflect.get(target, key),
-	}) as ExtensionAPI;
-	// Deferred to the first session_start so pi keeps (and never "replaces") the built-in codemode
-	// extension, which is what emits the startup replacement warning. The late registration takes
-	// precedence over the built-in definition in the session's tool registry.
-	let injected = false;
-	pi.on("session_start", () => {
-		if (injected) return;
-		injected = true;
-		createCodemodeExtension()(shim);
-	});
+			: next());
 }

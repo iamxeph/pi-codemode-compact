@@ -34,7 +34,7 @@ Pressing **Ctrl+O** expands the row to inspect the full syntax-highlighted scrip
 
 ## Requirements
 
-- **Pi Coding Agent**: `>= 0.99.0` (when the `codemode` tool was introduced)
+- **Pi Coding Agent**: `>= 1.0.1` (for `pi.registerToolRenderer()`, which replaced the earlier Proxy-based wiring)
 
 ---
 
@@ -48,9 +48,9 @@ pi install npm:pi-codemode-compact
 
 ## How It Works
 
-**pi-codemode-compact** invokes Pi's official `createCodemodeExtension()` factory to preserve all default execution behaviors, sandbox configuration, models API, and store persistence, while intercepting `registerTool` via a lightweight Proxy shim to inject compact TUI renderers for `codemode`.
+**pi-codemode-compact** registers a tool renderer resolver with `pi.registerToolRenderer()`. Pi asks the resolver how to draw each tool call, and the extension supplies compact `renderCall`/`renderResult` renderers only for `codemode`; every other tool falls through to Pi's own renderers via `next()`.
 
-Registration is deferred to the first `session_start` so the built-in `codemode` extension is never replaced (no startup warning): the extension's definition is registered late and takes precedence over the built-in one in the session tool registry. Auxiliary tools registered by the host remain untouched.
+The built-in `codemode` definition — execution, sandbox, models API, store persistence — is never re-registered or replaced, so there is no startup replacement warning and no mid-session tool redefinition. Because the renderer attaches by tool name, it also applies when another extension or SDK factory registers `codemode` with different options, and in HTML exports.
 
 ---
 

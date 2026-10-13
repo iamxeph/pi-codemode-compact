@@ -67,8 +67,19 @@ test("recorded durations win, with zero, invalid-value, old-session and HTML fal
 		assert.match(lines(renderResult(result, options, theme, context({ durationMs })))[0], /0\.1s$/);
 	}
 	const rejected = { content: [{ type: "text", text: "Invalid options" }] };
+	assert.equal(lines(renderResult(rejected, options, theme, context({ durationMs: 2500 })))[0],
+		"✓ done · 1 line · 2.5s");
 	assert.equal(lines(renderResult(rejected, options, theme, context({ isError: true, durationMs: 2500 })))[0],
 		"✗ Invalid options · 2.5s");
+	const failed = { content: [{ type: "text", text: header.replace("completed", "failed") + "Invalid options" }] };
+	assert.equal(lines(renderResult(failed, options, theme, context({ isError: true })))[0],
+		"✗ Invalid options · 0.1s");
+	assert.equal(lines(renderResult(failed, options, theme, context({ isError: true, durationMs: 0 })))[0],
+		"✗ Invalid options · 0.0s");
+	for (const durationMs of [undefined, NaN, -1, Infinity]) {
+		assert.equal(lines(renderResult(rejected, options, theme, context({ isError: true, durationMs })))[0],
+			"✗ Invalid options");
+	}
 	assert.equal(lines(renderResult({ content: [] }, options, theme, context()))[0], "✓ done");
 });
 
@@ -189,6 +200,9 @@ test("real Pi host: padding is applied once and inline images still obey showIma
 		host.markExecutionStarted();
 		host.updateResult({ ...result, content: [...result.content, png], isError: false }, false);
 		assert.equal(lines(host, 40).filter((line) => line.trim()).length, 2);
+		assert.match(lines(host, 40).filter((line) => line.trim())[1], /0\.1s$/, "Real host falls back to header time without recorded durationMs");
+		host.updateResult({ ...result, content: [...result.content, png], isError: false, durationMs: 2500 }, false);
+		assert.match(lines(host, 40).filter((line) => line.trim())[1], /2\.5s$/, "Real host passes recorded durationMs through to the renderer");
 		assert.ok(lines(host, 40).every((line) => visibleWidth(line) <= 40));
 		if (typeof host.setOutputPad === "function") {
 			host.setOutputPad(8);

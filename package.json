@@ -1,6 +1,6 @@
 {
   "name": "pi-codemode-compact",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Compact single-line summary renderer for Pi's codemode tool",
   "main": "index.ts",
   "type": "module",

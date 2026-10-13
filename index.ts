@@ -7,8 +7,9 @@
  * into single-line rows (each collapsed component is 1 line; after completion, pi stacks them into 2 lines total):
  *
  *   Call:    codemode todo, write, bash · 118 lines   (referenced tools approximation)
- *   Result:  ✓ todo, write, bash · 4 lines · 0.1s    (actual execution details from pi)
- *   Error:   ✗ write — TypeError: tools.foo is not a function
+ *   Running: … bash · 3 calls · 4.2s
+ *   Result:  ✓ todo, write, bash · 4 lines · 1 image · 0.1s
+ *   Error:   ✗ write — TypeError: tools.foo is not a function · 0.4s
  *
  * Expanding (Ctrl+O) reveals syntax-highlighted code, per-call timings, models cost, errors, and full output.
  *
@@ -26,7 +27,6 @@
  */
 import {
 	highlightCode,
-	type AgentToolResult,
 	type CodemodeToolDetails,
 	type ExtensionAPI,
 	type Theme,
@@ -37,6 +37,7 @@ import {
 	sliceByColumn,
 	stripTerminalSequences,
 	Text,
+	truncateToWidth,
 	visibleWidth,
 } from "@earendil-works/pi-tui";
 
@@ -68,21 +69,13 @@ export interface CodemodeRenderResult {
 	isError?: boolean;
 }
 
-/** Fallback maximum summary width (columns) when terminal width cannot be determined. */
+/** Keep summaries compact even when their container is very wide. */
 const MAX_SUMMARY = 96;
-/** Minimum summary width preserved even on very narrow terminals. */
-const MIN_SUMMARY = 24;
 /**
  * Maximum number of tool names listed before summarizing with '+N'.
  * Matches pi's default CALL_PREVIEW_COUNT (8) for parity.
  */
 const MAX_NAMES = 8;
-/**
- * Width budget reserved for title ("codemode "), delimiters, line counts, and padding.
- * Worst-case collapsed call line: title (9) + summary (max) + " · 999 lines" (12) = max + 21.
- * 24 leaves 3 columns of slack for shell margin / TUI container padding.
- */
-const WIDTH_RESERVE = 24;
 /** Terminal column width consumed by the result status icon and space ("✓ " / "✗ "). */
 const ICON_COLUMNS = 2;
 
@@ -128,19 +121,21 @@ export function plain(text: string): string {
 /**
  * Middle-truncates text to fit within max columns (wide-character aware),
  * preserving head and tail with an ellipsis in between.
- * If max <= 1, returns text unmodified.
+ * Empty and one-column budgets remain safe on very narrow terminals.
  */
 export function clip(text: string, max: number): string {
-	if (max <= 1 || visibleWidth(text) <= max) return text;
+	if (max <= 0) return "";
+	if (visibleWidth(text) <= max) return text;
+	if (max === 1) return "…";
 	const head = Math.ceil((max - 1) / 2);
 	const tail = max - 1 - head;
 	return `${sliceByColumn(text, 0, head)}…${tail > 0 ? sliceByColumn(text, visibleWidth(text) - tail, tail) : ""}`;
 }
 
-/** Calculates usable column width for summary text based on terminal dimensions. */
-export function summaryWidth(columns: number | undefined = process.stdout?.columns): number {
-	if (typeof columns !== "number" || !Number.isFinite(columns) || columns <= 0) return MAX_SUMMARY;
-	return Math.max(MIN_SUMMARY, Math.min(MAX_SUMMARY, columns - WIDTH_RESERVE));
+/** Caps the actual component width, not the terminal width (Pi applies shell padding). */
+export function summaryWidth(columns?: number): number {
+	if (typeof columns !== "number" || !Number.isFinite(columns) || columns < 0) return MAX_SUMMARY;
+	return Math.min(MAX_SUMMARY, Math.floor(columns));
 }
 
 /**
@@ -281,49 +276,56 @@ export function callLine(
 	isRegisteredTool?: (name: string) => boolean,
 ): string {
 	const title = theme.fg("toolTitle", theme.bold("codemode"));
-	if (code === null) return `${title} ${theme.fg("error", "[invalid arg]")}`;
+	if (code === null) return truncateToWidth(`${title} ${theme.fg("error", "[invalid arg]")}`, max, "…");
 	const script = plain(code).trim();
-	if (!script) return title;
+	if (!script) return truncateToWidth(title, max, "…");
 	const lines = countLines(script);
 	const summary = codeSummary(script, isRegisteredTool);
-	const head = summary ? ` ${theme.fg("accent", clip(summary, max))}` : "";
 	const tail = lines > 1 ? theme.fg("dim", ` · ${lines} lines`) : "";
-	return `${title}${head}${tail}`;
+	const budget = max - visibleWidth(title) - visibleWidth(tail) - 1;
+	const head = summary && budget > 0 ? ` ${theme.fg("accent", clip(summary, budget))}` : "";
+	return truncateToWidth(`${title}${head}${tail}`, max, "…");
 }
 
 /** Formats an in-progress execution line with currently running tools and total call count. */
-export function runningLine(theme: ThemeLike, calls: readonly NestedCall[], max: number = MAX_SUMMARY): string {
+export function runningLine(theme: ThemeLike, calls: readonly NestedCall[], max: number = MAX_SUMMARY, elapsed?: number): string {
 	const active = calls.filter((call) => call.status === "running");
 	const label = namesLabel(countNames((active.length > 0 ? active : calls).map((call) => call.name)));
 	const head = theme.fg("warning", "…");
-	if (!label) return head;
 	const total = calls.length;
-	const tail = total > 0 ? theme.fg("dim", ` · ${total} ${total === 1 ? "call" : "calls"}`) : "";
-	return `${head} ${theme.fg("accent", clip(label, max))}${tail}`;
+	const tail = theme.fg("dim",
+		(total > 0 ? ` · ${total} ${total === 1 ? "call" : "calls"}` : "") +
+		(elapsed !== undefined ? ` · ${elapsed.toFixed(1)}s` : ""));
+	const budget = max - visibleWidth(head) - visibleWidth(tail) - 1;
+	const tools = label && budget > 0 ? ` ${theme.fg("accent", clip(label, budget))}` : "";
+	return truncateToWidth(`${head}${tools}${tail}`, max, "…");
 }
 
 /** Formats a single collapsed result line for success or failure. */
 export function resultLine(
 	theme: ThemeLike,
-	view: { calls: readonly NestedCall[]; body: string; wallTime?: number; truncated: boolean; failed: boolean },
+	view: { calls: readonly NestedCall[]; body: string; wallTime?: number; images?: number; truncated: boolean; failed: boolean },
 	max: number = MAX_SUMMARY,
 ): string {
-	const budget = Math.max(ICON_COLUMNS, max - ICON_COLUMNS);
+	const budget = Math.max(0, max - ICON_COLUMNS);
 	if (view.failed) {
 		// ponytail: When multiple calls fail, findLast picks the latest failing call as the most likely root cause
 		const failing = [...view.calls].reverse().find((call) => call.status === "error")?.name;
 		const label = `${failing ? `${failing} — ` : ""}${errorLine(view.body) || "Script failed"}`;
-		return theme.fg("error", `✗ ${clip(label, budget)}`);
+		const tail = (view.images ? ` · ${view.images} ${view.images === 1 ? "image" : "images"}` : "") +
+			(view.wallTime !== undefined ? ` · ${view.wallTime.toFixed(1)}s` : "");
+		return truncateToWidth(theme.fg("error", `✗ ${clip(label, budget - visibleWidth(tail))}${tail}`), max, "…");
 	}
 	const parts: string[] = [];
 	parts.push(namesLabel(countNames(view.calls.map((call) => call.name))) || "done");
 	const lines = countLines(view.body);
 	if (lines > 0) parts.push(`${lines} ${lines === 1 ? "line" : "lines"}`);
+	if (view.images) parts.push(`${view.images} ${view.images === 1 ? "image" : "images"}`);
 	if (view.wallTime !== undefined) parts.push(`${view.wallTime.toFixed(1)}s`);
 	const cost = totalCost(view.calls);
 	if (cost !== undefined) parts.push(`$${formatCost(cost)}`);
 	if (view.truncated) parts.push("truncated");
-	return `${theme.fg("success", "✓")} ${theme.fg("dim", clip(parts.join(" · "), budget))}`;
+	return truncateToWidth(`${theme.fg("success", "✓")} ${theme.fg("dim", clip(parts.join(" · "), budget))}`, max, "…");
 }
 
 function statusIcon(status: NestedCall["status"], theme: Theme): string {
@@ -352,11 +354,46 @@ function callDetail(theme: Theme, call: NestedCall, max: number): string {
 	return `${line}\n  ${theme.fg("error", errorSummary)}`;
 }
 
-/** Reuses the previous Text component to avoid unnecessary allocations during frequent updates. */
-function textComponent(lastComponent: unknown, text: string): Text {
-	const component = (lastComponent as Text | undefined)?.setText ? (lastComponent as Text) : new Text("", 0, 0);
-	component.setText(text);
+/** Build summaries at layout time so resize, shell padding, and HTML widths are respected. */
+class SummaryText extends Text {
+	build: (width: number) => string = () => "";
+	private renderedText?: string;
+
+	override render(width: number): string[] {
+		if (width <= 0) return [];
+		const text = this.build(summaryWidth(width));
+		if (text !== this.renderedText) {
+			this.setText(text);
+			this.renderedText = text;
+		}
+		return super.render(width);
+	}
+}
+
+function textComponent(lastComponent: unknown, build: SummaryText["build"]): Text {
+	const component = lastComponent instanceof SummaryText ? lastComponent : new SummaryText("", 0, 0);
+	component.build = build;
+	component.invalidate();
 	return component;
+}
+
+interface Clock {
+	startedAt: number;
+	endedAt?: number;
+	interval?: ReturnType<typeof setInterval>;
+}
+
+function executionClock(context: RenderContext): Clock | undefined {
+	if (context.executionStarted && context.isPartial) {
+		context.state.codemodeCompactClock ??= { startedAt: performance.now() };
+	}
+	return context.state.codemodeCompactClock;
+}
+
+function stopClock(clock: Clock): void {
+	clock.endedAt ??= performance.now();
+	clearInterval(clock.interval);
+	clock.interval = undefined;
 }
 
 /** Retrieves currently registered tool names from pi to filter false positives. */
@@ -376,20 +413,19 @@ export function renderCall(
 ): Text {
 	// Stream states: string = ready, null = invalid complete arg, "" = streaming in-progress
 	const code = typeof args?.code === "string" ? args.code : context.argsComplete ? null : "";
-	const max = summaryWidth();
+	executionClock(context);
 	const isRegisteredTool = knownTools && knownTools.size > 0 ? (name: string) => knownTools.has(name) : undefined;
-	let text = callLine(theme, code, max, isRegisteredTool);
+	let body = "";
 	if (context.expanded && code) {
 		const script = plain(code).trimEnd();
-		let body: string;
 		try {
 			body = highlightCode(script, "javascript").join("\n");
 		} catch {
 			body = script; // Fallback if syntax highlighting fails
 		}
-		if (body) text += `\n${body}`;
 	}
-	return textComponent(context.lastComponent, text);
+	return textComponent(context.lastComponent, (width) =>
+		callLine(theme, code, width, isRegisteredTool) + (body ? `\n${body}` : ""));
 }
 
 export function renderResult(
@@ -399,31 +435,43 @@ export function renderResult(
 	context: RenderContext,
 ): Text {
 	const calls = result.details?.calls ?? [];
-	const max = summaryWidth();
 	const { body, wallTime } = splitScriptOutput(result.content ?? []);
-	const lines: string[] = options.isPartial
-		? [runningLine(theme, calls, max)]
-		: [
-				resultLine(theme, {
-					calls,
-					body,
-					wallTime,
+	const duration = context.durationMs;
+	const recordedTime = typeof duration === "number" && Number.isFinite(duration) && duration >= 0
+		? duration / 1000 : wallTime;
+	const images = result.content?.filter((item) => item.type === "image").length ?? 0;
+	const clock = executionClock(context);
+	if (clock && (!options.isPartial || context.isError)) stopClock(clock);
+	return textComponent(context.lastComponent, (width) => {
+		const elapsed = clock ? Math.max(0, (clock.endedAt ?? performance.now()) - clock.startedAt) / 1000 : undefined;
+		const lines = options.isPartial
+			? [runningLine(theme, calls, width, elapsed)]
+			: [resultLine(theme, {
+					calls, body, wallTime: recordedTime, images,
 					truncated: result.details?.fullOutputPath !== undefined,
-					// pi supplies failure status via context.isError; result.isError accepted as fallback
 					failed: context.isError === true || result.isError === true,
-				}, max),
-			];
-	if (options.expanded) {
-		for (const call of calls) lines.push(callDetail(theme, call, max));
-		const fullOutputPath = result.details?.fullOutputPath;
-		if (fullOutputPath) lines.push(theme.fg("muted", `Full output: ${fullOutputPath}`));
-		const output = plain(body).trim();
-		if (output) lines.push(output.split("\n").map((line) => theme.fg("toolOutput", line)).join("\n"));
-	}
-	return textComponent(context.lastComponent, lines.join("\n"));
+				}, width)];
+		if (options.expanded) {
+			for (const call of calls) lines.push(callDetail(theme, call, width));
+			const fullOutputPath = result.details?.fullOutputPath;
+			if (fullOutputPath) lines.push(theme.fg("muted", `Full output: ${fullOutputPath}`));
+			const output = plain(body).trim();
+			if (output) lines.push(output.split("\n").map((line) => theme.fg("toolOutput", line)).join("\n"));
+		}
+		return lines.join("\n");
+	});
 }
 
 export default function codemodeCompact(pi: ExtensionAPI): void {
+	const clocks = new Set<Clock>();
+	const clearClocks = () => {
+		for (const clock of clocks) stopClock(clock);
+		clocks.clear();
+	};
+	// session_shutdown also fires on reload; agent_end covers aborted runs without another render.
+	pi.on("session_shutdown", clearClocks);
+	pi.on("session_start", clearClocks);
+	pi.on("agent_end", clearClocks);
 	// Resolvers run in extension load order and next() returns what the remaining resolvers, then the
 	// registered tool, would draw. Returning our renderers overrides only the slots we define;
 	// spreading next() preserves any other slot (renderShell) another definition supplies.
@@ -433,8 +481,22 @@ export default function codemodeCompact(pi: ExtensionAPI): void {
 					...next(),
 					renderCall: (args: unknown, theme: Theme, context: RenderContext) =>
 						renderCall(args as { code?: unknown } | undefined, theme, context, registeredToolNames(pi)),
-					renderResult: (result, options, theme, context) =>
-						renderResult(result as unknown as CodemodeRenderResult, options, theme, context),
+					renderResult: (result, options, theme, context) => {
+						const component = renderResult(result as unknown as CodemodeRenderResult, options, theme, context);
+						const clock = context.state.codemodeCompactClock as Clock | undefined;
+						if (clock) {
+							if (!options.isPartial || context.isError) {
+								clocks.delete(clock);
+							} else if (clock.endedAt === undefined && !clock.interval) {
+								// ponytail: Pi < 1.2 can delay the first partial result until a nested call;
+								// upgrading Pi enables immediate ticks without replacing tool execution.
+								clock.interval = setInterval(() => context.invalidate(), 1000);
+								clock.interval.unref();
+								clocks.add(clock);
+							}
+						}
+						return component;
+					},
 				}
 			: next());
 }

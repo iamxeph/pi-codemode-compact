@@ -205,9 +205,9 @@ async function run() {
 		assert.equal(clip("abcdefghij", 4), "ab…j");
 		assert.equal(clip("abcdefghij", 3), "a…j");
 		assert.equal(clip("abcdefghij", 2), "a…");
-		assert.equal(clip("abcdefghij", 1), "abcdefghij");
-		assert.equal(clip("abcdefghij", 0), "abcdefghij");
-		assert.equal(clip("abcdefghij", -5), "abcdefghij");
+		assert.equal(clip("abcdefghij", 1), "…");
+		assert.equal(clip("abcdefghij", 0), "");
+		assert.equal(clip("abcdefghij", -5), "");
 	});
 
 	await check("clip: wide-character and CJK column width awareness", () => {
@@ -217,12 +217,13 @@ async function run() {
 		assert.ok(widthInStub(clipped) <= 8, "Clipped CJK exceeded column budget: " + clipped);
 	});
 
-	await check("summaryWidth: handles terminal dimensions and boundary reserves", () => {
-		assert.equal(summaryWidth(80), 56);
+	await check("summaryWidth: caps actual container width without a minimum", () => {
+		assert.equal(summaryWidth(80), 80);
 		assert.equal(summaryWidth(120), 96);
 		assert.equal(summaryWidth(200), 96);
-		assert.equal(summaryWidth(30), 24);
-		assert.equal(summaryWidth(10), 24);
+		assert.equal(summaryWidth(30), 30);
+		assert.equal(summaryWidth(10), 10);
+		assert.equal(summaryWidth(0), 0);
 		assert.equal(summaryWidth(undefined), 96);
 		assert.equal(summaryWidth(NaN), 96);
 		assert.equal(summaryWidth(-10), 96);
@@ -482,7 +483,7 @@ async function run() {
 		);
 		assert.equal(
 			firstLine(renderResult(failedRun, { expanded: false, isPartial: false }, theme as never, renderCtx({ isError: true }))),
-			"✗ read — Error: ENOENT: no such file or directory",
+			"✗ read — Error: ENOENT: no such file or directory · 0.4s",
 		);
 		const expanded = renderLines(
 			renderResult(failedRun, { expanded: true, isPartial: false }, theme as never, renderCtx({ expanded: true, isError: true })),
@@ -515,7 +516,7 @@ async function run() {
 					renderCtx(),
 				),
 			),
-			"✓ done",
+			"✓ done · 1 image",
 		);
 	});
 
@@ -523,6 +524,7 @@ async function run() {
 	await check("wiring: registers a renderer resolver and draws codemode compactly", () => {
 		let resolver: ((toolName: string, next: () => any) => any) | undefined;
 		codemodeCompact({
+			on: () => {},
 			registerToolRenderer: (r: typeof resolver) => { resolver = r; },
 			getAllTools: () => [{ name: "read" }, { name: "bash" }],
 		} as never);
@@ -551,6 +553,7 @@ async function run() {
 	await check("wiring: preserves renderer slots supplied by the registered definition", () => {
 		let resolver: ((toolName: string, next: () => any) => any) | undefined;
 		codemodeCompact({
+			on: () => {},
 			registerToolRenderer: (r: typeof resolver) => { resolver = r; },
 			getAllTools: () => [],
 		} as never);
@@ -568,6 +571,7 @@ async function run() {
 	await check("wiring: handles getAllTools throwing without crashing renderer", () => {
 		let resolver: ((toolName: string, next: () => any) => any) | undefined;
 		codemodeCompact({
+			on: () => {},
 			registerToolRenderer: (r: typeof resolver) => { resolver = r; },
 			getAllTools: () => { throw new Error("tools registry not ready"); },
 		} as never);

@@ -241,6 +241,12 @@ export function splitScriptOutput(
 	return { body, wallTime: Number.isFinite(wallTime) ? wallTime : undefined };
 }
 
+/** Validates Pi's recorded duration and converts milliseconds to display seconds. */
+function recordedDurationSeconds(durationMs: RenderContext["durationMs"]): number | undefined {
+	return typeof durationMs === "number" && Number.isFinite(durationMs) && durationMs >= 0
+		? durationMs / 1000 : undefined;
+}
+
 /**
  * Extracts the first non-empty error line following the last 'Script error:' marker.
  * Skips stack frame traces ('at ...') to find the actual error description.
@@ -304,7 +310,7 @@ export function runningLine(theme: ThemeLike, calls: readonly NestedCall[], max:
 /** Formats a single collapsed result line for success or failure. */
 export function resultLine(
 	theme: ThemeLike,
-	view: { calls: readonly NestedCall[]; body: string; wallTime?: number; images?: number; truncated: boolean; failed: boolean },
+	view: { calls: readonly NestedCall[]; body: string; durationSeconds?: number; images?: number; truncated: boolean; failed: boolean },
 	max: number = MAX_SUMMARY,
 ): string {
 	const budget = Math.max(0, max - ICON_COLUMNS);
@@ -313,7 +319,7 @@ export function resultLine(
 		const failing = [...view.calls].reverse().find((call) => call.status === "error")?.name;
 		const label = `${failing ? `${failing} — ` : ""}${errorLine(view.body) || "Script failed"}`;
 		const tail = (view.images ? ` · ${view.images} ${view.images === 1 ? "image" : "images"}` : "") +
-			(view.wallTime !== undefined ? ` · ${view.wallTime.toFixed(1)}s` : "");
+			(view.durationSeconds !== undefined ? ` · ${view.durationSeconds.toFixed(1)}s` : "");
 		return truncateToWidth(theme.fg("error", `✗ ${clip(label, budget - visibleWidth(tail))}${tail}`), max, "…");
 	}
 	const parts: string[] = [];
@@ -321,7 +327,7 @@ export function resultLine(
 	const lines = countLines(view.body);
 	if (lines > 0) parts.push(`${lines} ${lines === 1 ? "line" : "lines"}`);
 	if (view.images) parts.push(`${view.images} ${view.images === 1 ? "image" : "images"}`);
-	if (view.wallTime !== undefined) parts.push(`${view.wallTime.toFixed(1)}s`);
+	if (view.durationSeconds !== undefined) parts.push(`${view.durationSeconds.toFixed(1)}s`);
 	const cost = totalCost(view.calls);
 	if (cost !== undefined) parts.push(`$${formatCost(cost)}`);
 	if (view.truncated) parts.push("truncated");
@@ -435,10 +441,9 @@ export function renderResult(
 	context: RenderContext,
 ): Text {
 	const calls = result.details?.calls ?? [];
-	const { body, wallTime } = splitScriptOutput(result.content ?? []);
-	const duration = context.durationMs;
-	const recordedTime = typeof duration === "number" && Number.isFinite(duration) && duration >= 0
-		? duration / 1000 : wallTime;
+	const { body, wallTime: headerSeconds } = splitScriptOutput(result.content ?? []);
+	// Compatibility for old sessions and HTML exports; remove `?? headerSeconds` to drop the fallback.
+	const durationSeconds = recordedDurationSeconds(context.durationMs) ?? headerSeconds;
 	const images = result.content?.filter((item) => item.type === "image").length ?? 0;
 	const clock = executionClock(context);
 	if (clock && (!options.isPartial || context.isError)) stopClock(clock);
@@ -447,7 +452,7 @@ export function renderResult(
 		const lines = options.isPartial
 			? [runningLine(theme, calls, width, elapsed)]
 			: [resultLine(theme, {
-					calls, body, wallTime: recordedTime, images,
+					calls, body, durationSeconds, images,
 					truncated: result.details?.fullOutputPath !== undefined,
 					failed: context.isError === true || result.isError === true,
 				}, width)];

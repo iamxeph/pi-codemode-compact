@@ -323,7 +323,7 @@ async function run() {
 			resultLine(theme, {
 				calls: [call("read", "ok"), call("read", "ok"), call("bash", "ok")],
 				body: "line1\nline2",
-				wallTime: 0.1,
+				durationSeconds: 0.1,
 				truncated: false,
 				failed: false,
 			}),
@@ -332,18 +332,18 @@ async function run() {
 
 		const nineCalls = [1, 2, 3, 4, 5, 6, 7, 8, 9].map((i) => call("t" + i, "ok"));
 		assert.equal(
-			resultLine(theme, { calls: nineCalls, body: "out", wallTime: 1.2, truncated: false, failed: false }),
+			resultLine(theme, { calls: nineCalls, body: "out", durationSeconds: 1.2, truncated: false, failed: false }),
 			"✓ t1, t2, t3, t4, t5, t6, t7, t8 +1 · 1 line · 1.2s",
 		);
 	});
 
-	await check("resultLine (success edges): 0 calls, 0 output lines, wallTime 0, truncated indicator", () => {
+	await check("resultLine (success edges): 0 calls, 0 output lines, durationSeconds 0, truncated indicator", () => {
 		assert.equal(
 			resultLine(theme, { calls: [], body: "", truncated: false, failed: false }),
 			"✓ done",
 		);
 		assert.equal(
-			resultLine(theme, { calls: [call("read", "ok")], body: "", wallTime: 0.0, truncated: true, failed: false }),
+			resultLine(theme, { calls: [call("read", "ok")], body: "", durationSeconds: 0.0, truncated: true, failed: false }),
 			"✓ read · 0.0s · truncated",
 		);
 	});
@@ -380,7 +380,7 @@ async function run() {
 
 	await check("resultLine (cost): displays total model cost when present", () => {
 		const calls = [call("Agent", "ok", { cost: 0.035 }), call("Agent", "ok", { cost: 0.015 })];
-		const line = resultLine(theme, { calls, body: "done", wallTime: 0.5, truncated: false, failed: false });
+		const line = resultLine(theme, { calls, body: "done", durationSeconds: 0.5, truncated: false, failed: false });
 		assert.ok(line.includes("$0.05"), "Should include aggregate cost: " + line);
 	});
 
@@ -402,7 +402,7 @@ async function run() {
 				{
 					calls: ["read", "bash", "edit", "write", "todo"].map((name) => call(name, "ok")),
 					body: "x",
-					wallTime: 12.3,
+					durationSeconds: 12.3,
 					truncated: true,
 					failed: false,
 				},

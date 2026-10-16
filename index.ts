@@ -360,17 +360,26 @@ function callDetail(theme: Theme, call: NestedCall, max: number): string {
 	return `${line}\n  ${theme.fg("error", errorSummary)}`;
 }
 
-/** Build summaries at layout time so resize, shell padding, and HTML widths are respected. */
+/**
+ * Build summaries at layout time so resize, shell padding, and HTML widths are respected.
+ * The TUI renders every row on every frame, so a build is reused until the width changes or the
+ * row is invalidated (rerender, timer tick, theme change).
+ */
 class SummaryText extends Text {
 	build: (width: number) => string = () => "";
-	private renderedText?: string;
+	private builtWidth?: number;
+
+	override invalidate(): void {
+		super.invalidate();
+		this.builtWidth = undefined;
+	}
 
 	override render(width: number): string[] {
 		if (width <= 0) return [];
-		const text = this.build(summaryWidth(width));
-		if (text !== this.renderedText) {
-			this.setText(text);
-			this.renderedText = text;
+		const max = summaryWidth(width);
+		if (max !== this.builtWidth) {
+			this.setText(this.build(max));
+			this.builtWidth = max;
 		}
 		return super.render(width);
 	}
@@ -402,10 +411,15 @@ function stopClock(clock: Clock): void {
 	clock.interval = undefined;
 }
 
-/** Retrieves currently registered tool names from pi to filter false positives. */
+/** Script identifier of a tool name, mirroring pi-codemode's toCodemodeIdentifier (`my-tool` → `my_tool`). */
+export function codemodeIdentifier(name: string): string {
+	return name.replace(/^[^A-Za-z_$]|[^\w$]/gu, "_") || "_";
+}
+
+/** Retrieves currently registered tool names (and their script identifiers) from pi to filter false positives. */
 function registeredToolNames(pi: ExtensionAPI): Set<string> | null {
 	try {
-		return new Set(pi.getAllTools().map((tool) => tool.name));
+		return new Set(pi.getAllTools().flatMap((tool) => [tool.name, codemodeIdentifier(tool.name)]));
 	} catch {
 		return null;
 	}
@@ -485,7 +499,10 @@ export default function codemodeCompact(pi: ExtensionAPI): void {
 			? {
 					...next(),
 					renderCall: (args: unknown, theme: Theme, context: RenderContext) =>
-						renderCall(args as { code?: unknown } | undefined, theme, context, registeredToolNames(pi)),
+						// Rows rerender on every update and timer tick; once the script is final, its tool set is too.
+						renderCall(args as { code?: unknown } | undefined, theme, context, context.argsComplete
+							? (context.state.codemodeCompactTools ??= registeredToolNames(pi))
+							: registeredToolNames(pi)),
 					renderResult: (result, options, theme, context) => {
 						const component = renderResult(result as unknown as CodemodeRenderResult, options, theme, context);
 						const clock = context.state.codemodeCompactClock as Clock | undefined;

@@ -268,9 +268,9 @@ export function formatCost(cost: number): string {
 	return cost >= 0.01 ? cost.toFixed(2) : cost.toPrecision(2);
 }
 
-/** Calculates total USD cost from nested calls; undefined if no calls reported cost. */
+/** Calculates total USD cost from nested calls; undefined if no call reported a positive cost (free/unpriced models report 0). */
 export function totalCost(calls: readonly NestedCall[]): number | undefined {
-	const priced = calls.filter((call) => typeof call.cost === "number" && Number.isFinite(call.cost));
+	const priced = calls.filter((call) => (call.cost ?? 0) > 0 && Number.isFinite(call.cost));
 	return priced.length > 0 ? priced.reduce((sum, call) => sum + (call.cost ?? 0), 0) : undefined;
 }
 
@@ -296,7 +296,7 @@ export function callLine(
 /** Formats an in-progress execution line with currently running tools and total call count. */
 export function runningLine(theme: ThemeLike, calls: readonly NestedCall[], max: number = MAX_SUMMARY, elapsed?: number): string {
 	const active = calls.filter((call) => call.status === "running");
-	const label = namesLabel(countNames((active.length > 0 ? active : calls).map((call) => call.name)));
+	const label = namesLabel(countNames((active.length > 0 ? active : calls).map((call) => call.name))) || "running";
 	const head = theme.fg("warning", "…");
 	const total = calls.length;
 	const tail = theme.fg("dim",
@@ -318,12 +318,19 @@ export function resultLine(
 		// ponytail: When multiple calls fail, findLast picks the latest failing call as the most likely root cause
 		const failing = [...view.calls].reverse().find((call) => call.status === "error")?.name;
 		const label = `${failing ? `${failing} — ` : ""}${errorLine(view.body) || "Script failed"}`;
-		const tail = (view.images ? ` · ${view.images} ${view.images === 1 ? "image" : "images"}` : "") +
-			(view.durationSeconds !== undefined ? ` · ${view.durationSeconds.toFixed(1)}s` : "");
+		// Aborts and Promise.all rejections cancel sibling calls; name them so the row says what never finished
+		const cancelled = namesLabel(countNames(view.calls.filter((call) => call.status === "cancelled").map((call) => call.name)));
+		const cost = totalCost(view.calls);
+		const tail = (cancelled ? ` · ${cancelled} cancelled` : "") +
+			(view.images ? ` · ${view.images} ${view.images === 1 ? "image" : "images"}` : "") +
+			(view.durationSeconds !== undefined ? ` · ${view.durationSeconds.toFixed(1)}s` : "") +
+			(cost !== undefined ? ` · $${formatCost(cost)}` : "");
 		return truncateToWidth(theme.fg("error", `✗ ${clip(label, budget - visibleWidth(tail))}${tail}`), max, "…");
 	}
+	const names = namesLabel(countNames(view.calls.map((call) => call.name))) || "done";
+	// Scripts that catch nested failures (try/catch, Promise.allSettled) still succeed; keep those failures visible
+	const errored = namesLabel(countNames(view.calls.filter((call) => call.status === "error").map((call) => call.name)));
 	const parts: string[] = [];
-	parts.push(namesLabel(countNames(view.calls.map((call) => call.name))) || "done");
 	const lines = countLines(view.body);
 	if (lines > 0) parts.push(`${lines} ${lines === 1 ? "line" : "lines"}`);
 	if (view.images) parts.push(`${view.images} ${view.images === 1 ? "image" : "images"}`);
@@ -331,7 +338,12 @@ export function resultLine(
 	const cost = totalCost(view.calls);
 	if (cost !== undefined) parts.push(`$${formatCost(cost)}`);
 	if (view.truncated) parts.push("truncated");
-	return truncateToWidth(`${theme.fg("success", "✓")} ${theme.fg("dim", clip(parts.join(" · "), budget))}`, max, "…");
+	const mark = errored ? ` · ✗ ${errored}` : "";
+	const stats = parts.map((part) => ` · ${part}`).join("");
+	const room = budget - visibleWidth(mark) - visibleWidth(stats);
+	return truncateToWidth(
+		`${theme.fg("success", "✓")} ${theme.fg("dim", clip(names, room))}${errored ? `${theme.fg("dim", " · ")}${theme.fg("error", "✗")} ${theme.fg("dim", errored)}` : ""}${theme.fg("dim", stats)}`,
+		max, "…");
 }
 
 function statusIcon(status: NestedCall["status"], theme: Theme): string {
@@ -348,16 +360,16 @@ function statusIcon(status: NestedCall["status"], theme: Theme): string {
 	}
 }
 
-/** Formats a single call detail row for expanded view. */
-function callDetail(theme: Theme, call: NestedCall, max: number): string {
+/** Formats a single call detail row for expanded view; args and errors stay whole, like Pi's own expanded rows. */
+function callDetail(theme: Theme, call: NestedCall): string {
 	const duration = call.durationMs === undefined
 		? ""
 		: theme.fg("dim", ` ${call.durationMs < 1000 ? `${Math.round(call.durationMs)}ms` : `${(call.durationMs / 1000).toFixed(1)}s`}`);
-	const cost = call.cost !== undefined ? theme.fg("dim", ` $${formatCost(call.cost)}`) : "";
-	const line = `${statusIcon(call.status, theme)} ${theme.fg("toolTitle", call.name)} ${theme.fg("muted", clip(plain(call.args), max))}${duration}${cost}`;
+	const cost = call.cost ? theme.fg("dim", ` $${formatCost(call.cost)}`) : "";
+	const args = plain(call.args);
+	const line = `${statusIcon(call.status, theme)} ${theme.fg("toolTitle", call.name)}${args ? ` ${theme.fg("muted", args)}` : ""}${duration}${cost}`;
 	if (!call.error) return line;
-	const errorSummary = clip(plain(call.error).replace(/\s*\n\s*/g, " "), max);
-	return `${line}\n  ${theme.fg("error", errorSummary)}`;
+	return `${line}\n${plain(call.error).split("\n").map((l) => theme.fg("error", `    ${l}`)).join("\n")}`;
 }
 
 /**
@@ -461,6 +473,7 @@ export function renderResult(
 	const images = result.content?.filter((item) => item.type === "image").length ?? 0;
 	const clock = executionClock(context);
 	if (clock && (!options.isPartial || context.isError)) stopClock(clock);
+	const failed = context.isError === true || result.isError === true;
 	return textComponent(context.lastComponent, (width) => {
 		const elapsed = clock ? Math.max(0, (clock.endedAt ?? performance.now()) - clock.startedAt) / 1000 : undefined;
 		const lines = options.isPartial
@@ -468,14 +481,14 @@ export function renderResult(
 			: [resultLine(theme, {
 					calls, body, durationSeconds, images,
 					truncated: result.details?.fullOutputPath !== undefined,
-					failed: context.isError === true || result.isError === true,
+					failed,
 				}, width)];
 		if (options.expanded) {
-			for (const call of calls) lines.push(callDetail(theme, call, width));
+			for (const call of calls) lines.push(callDetail(theme, call));
 			const fullOutputPath = result.details?.fullOutputPath;
 			if (fullOutputPath) lines.push(theme.fg("muted", `Full output: ${fullOutputPath}`));
 			const output = plain(body).trim();
-			if (output) lines.push(output.split("\n").map((line) => theme.fg("toolOutput", line)).join("\n"));
+			if (output) lines.push(output.split("\n").map((line) => theme.fg(failed ? "error" : "toolOutput", line)).join("\n"));
 		}
 		return lines.join("\n");
 	});

@@ -260,6 +260,7 @@ async function run() {
 		assert.equal(totalCost([call("read", "ok", { cost: 0.02 }), call("bash", "ok", { cost: 0.03 })]), 0.05);
 		assert.equal(totalCost([call("read", "ok")]), undefined);
 		assert.equal(totalCost([]), undefined);
+		assert.equal(totalCost([call("classify", "ok", { cost: 0 })]), undefined, "Unpriced models must not render $0.0");
 	});
 
 	// ── 2. Result Parsing ────────────────────────────────────────────────────
@@ -335,6 +336,17 @@ async function run() {
 			resultLine(theme, { calls: nineCalls, body: "out", durationSeconds: 1.2, truncated: false, failed: false }),
 			"✓ t1, t2, t3, t4, t5, t6, t7, t8 +1 · 1 line · 1.2s",
 		);
+
+		// Partial failure: caught nested errors stay visible next to the call list, stats survive clipping
+		const partial = [call("bash", "ok"), call("read", "error"), call("bash", "ok"), call("read", "error")];
+		assert.equal(
+			resultLine(theme, { calls: partial, body: "a\nb\nc\nd", durationSeconds: 0.1, truncated: false, failed: false }),
+			"✓ bash×2, read×2 · ✗ read×2 · 4 lines · 0.1s",
+		);
+		assert.equal(
+			resultLine(theme, { calls: partial, body: "a", durationSeconds: 0.1, truncated: false, failed: false }, 36),
+			"✓ bas…d×2 · ✗ read×2 · 1 line · 0.1s",
+		);
 	});
 
 	await check("resultLine (success edges): 0 calls, 0 output lines, durationSeconds 0, truncated indicator", () => {
@@ -360,7 +372,18 @@ async function run() {
 		);
 		assert.equal(
 			resultLine(theme, { calls: [call("read", "cancelled")], body: "", truncated: false, failed: true }),
-			"✗ Script failed",
+			"✗ Script failed · read cancelled",
+		);
+		// Aborted run: cancelled siblings and spent model cost stay visible after the clipped error
+		assert.equal(
+			resultLine(theme, {
+				calls: [call("bash", "cancelled"), call("bash", "cancelled"), call("Agent", "ok", { cost: 0.02 })],
+				body: "Script error:\nScript aborted: This operation was aborted",
+				durationSeconds: 7.3,
+				truncated: false,
+				failed: true,
+			}, 60),
+			"✗ Script abort…was aborted · bash×2 cancelled · 7.3s · $0.02",
 		);
 	});
 
@@ -388,7 +411,7 @@ async function run() {
 		assert.equal(runningLine(theme, [call("read", "ok"), call("bash", "running")]), "… bash · 2 calls");
 		assert.equal(runningLine(theme, [call("read", "ok"), call("read", "ok")]), "… read×2 · 2 calls");
 		assert.equal(runningLine(theme, [call("bash", "running")]), "… bash · 1 call");
-		assert.equal(runningLine(theme, []), "…");
+		assert.equal(runningLine(theme, []), "… running");
 	});
 
 	await check("width guarantee: summary lines never exceed terminal column widths across 60-120", () => {
@@ -489,6 +512,13 @@ async function run() {
 			renderResult(failedRun, { expanded: true, isPartial: false }, theme as never, renderCtx({ expanded: true, isError: true })),
 		);
 		assert.ok(expanded.some((l: string) => l.includes("Error: ENOENT")), "Per-call error detail shown when expanded");
+		// Expanded details must not clip what the collapsed row hides
+		const longPath = `/${"deep/".repeat(40)}file.txt`;
+		const whole = renderLines(renderResult(
+			{ content: [], details: { calls: [call("read", "error", { args: JSON.stringify({ path: longPath }), error: `ENOENT\n'${longPath}'` })] } },
+			{ expanded: true, isPartial: false }, theme as never, renderCtx({ expanded: true, isError: true }),
+		)).join("\n");
+		assert.equal(whole.split(longPath).length, 3, "Full args and full multi-line error survive expansion");
 	});
 
 	await check("renderResult: safe with truncated outputs, empty results, and image-only blocks", () => {

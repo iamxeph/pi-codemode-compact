@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/iamxeph/pi-codemode-compact/compare/v0.2.0...v0.2.1) (2026-10-16)
+
+
+### Bug Fixes
+
+* **renderer:** cache summaries per width and recognize hyphenated tool names ([#14](https://github.com/iamxeph/pi-codemode-compact/issues/14)) ([2a2c314](https://github.com/iamxeph/pi-codemode-compact/commit/2a2c314346d2e4cbd8480ea909be428ff5504a49))
+
 ## [0.2.0](https://github.com/iamxeph/pi-codemode-compact/compare/v0.1.1...v0.2.0) (2026-10-13)
 
 

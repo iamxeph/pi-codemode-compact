@@ -60,6 +60,33 @@ test("real Text: collapsed rows stay one line at the actual width, including res
 	}
 });
 
+test("real Text: summaries are rebuilt only on width change or invalidate; hyphenated tools are recognized", () => {
+	let toolLookups = 0;
+	let resolver: Parameters<ExtensionAPI["registerToolRenderer"]>[0] | undefined;
+	codemodeCompact({
+		on() {},
+		registerToolRenderer: (r: typeof resolver) => { resolver = r; },
+		getAllTools: () => { toolLookups++; return [{ name: "my-tool" }]; },
+	} as unknown as ExtensionAPI);
+	const renderers = resolver!("codemode", () => undefined)!;
+	const ctx = context();
+	const call = renderers.renderCall!({ code: "await tools.my_tool({});\nawait other.x();" }, theme, ctx);
+	assert.deepEqual(lines(call, 80), ["codemode my_tool · 2 lines"]);
+	renderers.renderCall!({ code: "await tools.my_tool({});\nawait other.x();" }, theme, { ...ctx, lastComponent: call });
+	assert.equal(toolLookups, 1, "Complete args reuse the registered tool set");
+
+	let builds = 0;
+	const row = renderCall({ code: "text(1);" }, theme, context(), null) as Text & { build: (w: number) => string };
+	const build = row.build;
+	row.build = (width) => { builds++; return build(width); };
+	for (let i = 0; i < 5; i++) row.render(80);
+	assert.equal(builds, 1, "Frames at the same width reuse the summary");
+	row.render(40);
+	row.invalidate();
+	row.render(40);
+	assert.equal(builds, 3, "Resize and invalidate rebuild");
+});
+
 test("recorded durations win, with zero, invalid-value, old-session and HTML fallbacks", () => {
 	assert.match(lines(renderResult(result, options, theme, context({ durationMs: 2500 })))[0], /2\.5s$/);
 	assert.match(lines(renderResult(result, options, theme, context({ durationMs: 0 })))[0], /0\.0s$/);
@@ -135,10 +162,12 @@ test("live clocks tick and stop on completion, errors, abort, session switch and
 	const { renderers, events } = wiring();
 	let redraws = 0;
 	const start = () => {
-		const ctx = context({ executionStarted: true, isPartial: true, invalidate: () => { redraws++; } });
+		// Like Pi's host, invalidating the row also invalidates its child components.
+		let component!: { render(width: number): string[]; invalidate?(): void };
+		const ctx = context({ executionStarted: true, isPartial: true, invalidate: () => { redraws++; component?.invalidate?.(); } });
 		renderers.renderCall!({ code: "text(1);" }, theme, ctx);
 		ctx.state.codemodeCompactClock.startedAt = performance.now() - 4200;
-		const component = renderers.renderResult!({ content: [], details: { calls: [] } }, { ...options, isPartial: true }, theme, ctx);
+		component = renderers.renderResult!({ content: [], details: { calls: [] } }, { ...options, isPartial: true }, theme, ctx);
 		assert.match(lines(component)[0], /^… · 4\.2s$/);
 		const count = intervals.mock.callCount();
 		renderers.renderResult!({ content: [], details: { calls: [] } }, { ...options, isPartial: true }, theme, ctx);

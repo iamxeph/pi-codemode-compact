@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/iamxeph/pi-codemode-compact/compare/v0.2.1...v0.3.0) (2026-10-16)
+
+
+### Features
+
+* **renderer:** surface failed and cancelled nested calls, keep expanded details whole ([#16](https://github.com/iamxeph/pi-codemode-compact/issues/16)) ([5517651](https://github.com/iamxeph/pi-codemode-compact/commit/5517651defa958c367c2864df7fff208aee0c5fc))
+
 ## [0.2.1](https://github.com/iamxeph/pi-codemode-compact/compare/v0.2.0...v0.2.1) (2026-10-16)
 
 

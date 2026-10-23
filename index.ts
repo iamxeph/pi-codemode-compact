@@ -9,7 +9,8 @@
  *   Call:    codemode todo, write, bash · 118 lines   (referenced tools approximation)
  *   Running: … bash · 3 calls · 4s
  *   Result:  ✓ todo, write, bash · 4 lines · 1 image · 0.1s
- *   Error:   ✗ write — TypeError: tools.foo is not a function · 0.4s
+ *   Error:   ✗ read — Error: ENOENT: no such file or directory · 0.4s
+ *   Aborted: ⊘ aborted · bash cancelled · 4.9s
  *
  * Expanding (Ctrl+O) reveals syntax-highlighted code, per-call timings, models cost, errors, and full output.
  *
@@ -130,6 +131,12 @@ export function clip(text: string, max: number): string {
 	const head = Math.ceil((max - 1) / 2);
 	const tail = max - 1 - head;
 	return `${sliceByColumn(text, 0, head)}…${tail > 0 ? sliceByColumn(text, visibleWidth(text) - tail, tail) : ""}`;
+}
+
+/** End-truncates text to max columns, keeping its start, which carries an error's meaning. */
+export function clipEnd(text: string, max: number): string {
+	if (max <= 0) return "";
+	return visibleWidth(text) <= max ? text : `${sliceByColumn(text, 0, max - 1).trimEnd()}…`;
 }
 
 /** Caps the actual component width, not the terminal width (Pi applies shell padding). */
@@ -316,17 +323,28 @@ export function resultLine(
 ): string {
 	const budget = Math.max(0, max - ICON_COLUMNS);
 	if (view.failed) {
-		// ponytail: When multiple calls fail, findLast picks the latest failing call as the most likely root cause
-		const failing = [...view.calls].reverse().find((call) => call.status === "error")?.name;
-		const label = `${failing ? `${failing} — ` : ""}${errorLine(view.body) || "Script failed"}`;
+		const error = errorLine(view.body);
+		// A stop (Esc, a parent's abort) is not a script bug, so it gets Pi's cancelled mark instead of ✗
+		const aborted = error.startsWith("Script aborted:");
+		// An uncaught tool failure rethrows the tool's own error text; a caught one (try/catch, allSettled) never
+		// reaches the script error, so only a call whose error the script error repeats is named.
+		const failing = aborted ? undefined : [...view.calls].reverse().find((call) => {
+			// Pi cuts long call errors with "..."; the start still matches
+			const first = plain(call.error ?? "").trim().split("\n")[0].trim().replace(/\.\.\.$/, "");
+			return call.status === "error" && first !== "" && error.includes(first);
+		})?.name;
+		const label = aborted ? "aborted" : `${failing ? `${failing} — ` : ""}${error || "Script failed"}`;
 		// Aborts and Promise.all rejections cancel sibling calls; name them so the row says what never finished
 		const cancelled = namesLabel(countNames(view.calls.filter((call) => call.status === "cancelled").map((call) => call.name)));
 		const cost = totalCost(view.calls);
-		const tail = (cancelled ? ` · ${cancelled} cancelled` : "") +
-			(view.images ? ` · ${view.images} ${view.images === 1 ? "image" : "images"}` : "") +
+		const stats = (view.images ? ` · ${view.images} ${view.images === 1 ? "image" : "images"}` : "") +
 			(view.durationSeconds !== undefined ? ` · ${view.durationSeconds.toFixed(1)}s` : "") +
 			(cost !== undefined ? ` · $${formatCost(cost)}` : "");
-		return truncateToWidth(theme.fg("error", `✗ ${clip(label, budget - visibleWidth(tail))}${tail}`), max, "…");
+		const withCancelled = (cancelled ? ` · ${cancelled} cancelled` : "") + stats;
+		// The error outranks the cancelled list: it keeps at least half the row before that list is dropped
+		const tail = budget - visibleWidth(withCancelled) >= Math.min(visibleWidth(label), budget / 2) ? withCancelled : stats;
+		const row = `${aborted ? "⊘" : "✗"} ${clipEnd(label, budget - visibleWidth(tail))}${tail}`;
+		return truncateToWidth(theme.fg(aborted ? "muted" : "error", row), max, "…");
 	}
 	const names = namesLabel(countNames(view.calls.map((call) => call.name))) || "done";
 	// Scripts that catch nested failures (try/catch, Promise.allSettled) still succeed; keep those failures visible

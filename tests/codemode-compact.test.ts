@@ -360,7 +360,9 @@ async function run() {
 		);
 	});
 
-	await check("resultLine (failure): names failed tool and clips error message", () => {
+	await check("resultLine (failure): names only the tool whose error stopped the script", () => {
+		const enoent = "ENOENT: no such file or directory, access '/repo/missing.txt'";
+		// Caught earlier (allSettled/try), then an unrelated bug stopped the script: no tool is blamed
 		assert.equal(
 			resultLine(theme, {
 				calls: [call("read", "ok"), call("write", "error", { error: "ENOENT" })],
@@ -368,22 +370,74 @@ async function run() {
 				truncated: false,
 				failed: true,
 			}),
-			"✗ write — TypeError: tools.foo is not a function",
+			"✗ TypeError: tools.foo is not a function",
+		);
+		// Uncaught tool failure: Pi rethrows the tool's own text, so the tool is named
+		assert.equal(
+			resultLine(theme, {
+				calls: [call("read", "error", { error: "ENOENT: nope" }), call("write", "error", { error: enoent })],
+				body: `Script error:\nError: ${enoent}\n    at <anonymous> (codemode.js:1:9)\n\nTool calls made before the failure (they are not undone): read (error), write (error)`,
+				truncated: false,
+				failed: true,
+			}, 200),
+			`✗ write — Error: ${enoent}`,
+		);
+		// Pi cuts long call errors to 500 chars with "..."; the kept start still matches
+		const long = "x".repeat(600);
+		assert.equal(
+			resultLine(theme, {
+				calls: [call("bash", "error", { error: `${long.slice(0, 497)}...` })],
+				body: `Script error:\nError: ${long}`,
+				truncated: false,
+				failed: true,
+			}, 20),
+			"✗ bash — Error: xxx…",
+		);
+		// Narrow rows keep the error's start and drop the cancelled list first
+		assert.equal(
+			resultLine(theme, {
+				calls: [call("bash", "cancelled"), call("read", "error", { error: enoent })],
+				body: `Script error:\nError: ${enoent}`,
+				durationSeconds: 0.1,
+				truncated: false,
+				failed: true,
+			}, 45),
+			"✗ read — Error: ENOENT: no such file… · 0.1s",
+		);
+		assert.equal(
+			resultLine(theme, {
+				calls: [call("bash", "cancelled"), call("read", "error", { error: enoent })],
+				body: `Script error:\nError: ${enoent}`,
+				durationSeconds: 0.1,
+				truncated: false,
+				failed: true,
+			}, 80),
+			"✗ read — Error: ENOENT: no such file or directory, acce… · bash cancelled · 0.1s",
+		);
+		assert.equal(
+			resultLine(theme, {
+				calls: [call("bash", "cancelled"), call("read", "error", { error: "ENOENT" })],
+				body: "Script error:\nError: ENOENT",
+				durationSeconds: 0.1,
+				truncated: false,
+				failed: true,
+			}, 50),
+			"✗ read — Error: ENOENT · bash cancelled · 0.1s",
 		);
 		assert.equal(
 			resultLine(theme, { calls: [call("read", "cancelled")], body: "", truncated: false, failed: true }),
 			"✗ Script failed · read cancelled",
 		);
-		// Aborted run: cancelled siblings and spent model cost stay visible after the clipped error
+		// Aborted run: a stop, not a bug; an earlier caught error is not blamed, cancelled siblings and cost stay visible
 		assert.equal(
 			resultLine(theme, {
-				calls: [call("bash", "cancelled"), call("bash", "cancelled"), call("Agent", "ok", { cost: 0.02 })],
+				calls: [call("read", "error", { error: "Script aborted: This operation was aborted" }), call("bash", "cancelled"), call("bash", "cancelled"), call("Agent", "ok", { cost: 0.02 })],
 				body: "Script error:\nScript aborted: This operation was aborted",
 				durationSeconds: 7.3,
 				truncated: false,
 				failed: true,
 			}, 60),
-			"✗ Script abort…was aborted · bash×2 cancelled · 7.3s · $0.02",
+			"⊘ aborted · bash×2 cancelled · 7.3s · $0.02",
 		);
 	});
 

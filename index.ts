@@ -7,7 +7,7 @@
  * into single-line rows (each collapsed component is 1 line; after completion, pi stacks them into 2 lines total):
  *
  *   Call:    codemode todo, write, bash · 118 lines   (referenced tools approximation)
- *   Running: … bash · 3 calls · 4.2s
+ *   Running: … bash · 3 calls · 4s
  *   Result:  ✓ todo, write, bash · 4 lines · 1 image · 0.1s
  *   Error:   ✗ write — TypeError: tools.foo is not a function · 0.4s
  *
@@ -301,7 +301,8 @@ export function runningLine(theme: ThemeLike, calls: readonly NestedCall[], max:
 	const total = calls.length;
 	const tail = theme.fg("dim",
 		(total > 0 ? ` · ${total} ${total === 1 ? "call" : "calls"}` : "") +
-		(elapsed !== undefined ? ` · ${elapsed.toFixed(1)}s` : ""));
+		// Redrawn once a second, so a decimal would only ever show .0
+		(elapsed !== undefined ? ` · ${Math.floor(elapsed)}s` : ""));
 	const budget = max - visibleWidth(head) - visibleWidth(tail) - 1;
 	const tools = label && budget > 0 ? ` ${theme.fg("accent", clip(label, budget))}` : "";
 	return truncateToWidth(`${head}${tools}${tail}`, max, "…");

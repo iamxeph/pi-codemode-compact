@@ -168,13 +168,13 @@ test("live clocks tick and stop on completion, errors, abort, session switch and
 		renderers.renderCall!({ code: "text(1);" }, theme, ctx);
 		ctx.state.codemodeCompactClock.startedAt = performance.now() - 4200;
 		component = renderers.renderResult!({ content: [], details: { calls: [] } }, { ...options, isPartial: true }, theme, ctx);
-		assert.match(lines(component)[0], /^… running · 4\.2s$/);
+		assert.match(lines(component)[0], /^… running · 4s$/);
 		const count = intervals.mock.callCount();
 		renderers.renderResult!({ content: [], details: { calls: [] } }, { ...options, isPartial: true }, theme, ctx);
 		assert.equal(intervals.mock.callCount(), count, "Rerender must not duplicate timers");
 		now += 1000;
 		mock.timers.tick(1000);
-		assert.match(lines(component)[0], /^… running · 5\.2s$/, "Elapsed time updates at layout time");
+		assert.match(lines(component)[0], /^… running · 5s$/, "Elapsed time updates at layout time");
 		return ctx;
 	};
 	try {

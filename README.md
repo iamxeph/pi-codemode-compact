@@ -8,7 +8,7 @@ A compact single-line summary renderer for [Pi Coding Agent](https://github.com/
 
 ```text
 Call:    codemode todo, write, bash · 118 lines
-Running: … bash · 3 calls · 4.2s
+Running: … bash · 3 calls · 4s
 Result:  ✓ todo, write, bash · 4 lines · 1 image · 0.1s · $0.02
 Error:   ✗ write — TypeError: tools.foo is not a function · 0.4s
 ```
@@ -30,7 +30,7 @@ Pressing **Ctrl+O** expands the row to inspect the full syntax-highlighted scrip
 - **Space-Saving**: Replaces 10–20 rows of `codemode` output with a clean 2-line summary.
 - **Width-Aware**: Fits the actual rendering area, including shell padding, terminal resizing, and HTML exports.
 - **Key Metrics at a Glance**: Tools used, output line and image counts, execution time, and LLM cost (`$cost`).
-- **Live Timing**: Updates elapsed time in the running summary every second. Final results prefer Pi’s recorded duration, falling back to the script header for older sessions and Pi versions.
+- **Live Timing**: Updates elapsed time in the running summary every second, in whole seconds. Final results prefer Pi’s recorded duration, falling back to the script header for older sessions and Pi versions.
 - **Fully Expandable**: Press **Ctrl+O** anytime to inspect the full script source and raw output.
 
 ---

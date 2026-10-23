@@ -57,7 +57,7 @@ The built-in `codemode` definition — execution, sandbox, models API, store per
 
 Pi remains responsible for inline image rendering and the `showImages` setting; the compact summary only adds an image count. Text-item boundaries, console blocks, and saved image paths remain visible when expanded. Output line counts include non-empty boundary and metadata lines, not just script-authored text.
 
-Live timers stop on completion, errors, aborted runs, session changes, and reload. HTML exports do not start timers. CI uses the development SDK (currently Pi 1.3.0), with actual Pi extension-loader, TUI, host image, and HTML renderer checks in addition to the fast summary unit tests.
+Live timers stop on completion, errors, aborted runs, session changes, and reload. HTML exports do not start timers. CI uses the development SDK (currently Pi 1.4.0), with actual Pi extension-loader, TUI, host image, and HTML renderer checks in addition to the fast summary unit tests.
 
 ---
 

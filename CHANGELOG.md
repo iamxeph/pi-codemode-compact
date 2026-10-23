@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.0](https://github.com/iamxeph/pi-codemode-compact/compare/v0.3.0...v0.4.0) (2026-10-23)
+
+
+### Features
+
+* **renderer:** show live elapsed time in whole seconds ([#18](https://github.com/iamxeph/pi-codemode-compact/issues/18)) ([900a9c6](https://github.com/iamxeph/pi-codemode-compact/commit/900a9c67bccfb078e8b1a2e3447401638cdb4431))
+
+
+### Bug Fixes
+
+* **renderer:** blame only the tool that stopped the script, mark aborts, keep error starts on narrow rows ([#20](https://github.com/iamxeph/pi-codemode-compact/issues/20)) ([6d345a0](https://github.com/iamxeph/pi-codemode-compact/commit/6d345a0fabe9ab147325d96bc92fb1e15e024482))
+
 ## [0.3.0](https://github.com/iamxeph/pi-codemode-compact/compare/v0.2.1...v0.3.0) (2026-10-16)
 
 

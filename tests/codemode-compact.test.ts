@@ -412,6 +412,7 @@ async function run() {
 		assert.equal(runningLine(theme, [call("read", "ok"), call("read", "ok")]), "… read×2 · 2 calls");
 		assert.equal(runningLine(theme, [call("bash", "running")]), "… bash · 1 call");
 		assert.equal(runningLine(theme, []), "… running");
+		assert.equal(runningLine(theme, [], 96, 4.9), "… running · 4s", "Live elapsed shows whole seconds");
 	});
 
 	await check("width guarantee: summary lines never exceed terminal column widths across 60-120", () => {

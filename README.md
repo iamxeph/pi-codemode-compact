@@ -10,7 +10,8 @@ A compact single-line summary renderer for [Pi Coding Agent](https://github.com/
 Call:    codemode todo, write, bash · 118 lines
 Running: … bash · 3 calls · 4s
 Result:  ✓ todo, write, bash · 4 lines · 1 image · 0.1s · $0.02
-Error:   ✗ write — TypeError: tools.foo is not a function · 0.4s
+Error:   ✗ read — Error: ENOENT: no such file or directory · 0.4s
+Aborted: ⊘ aborted · bash cancelled · 4.9s
 ```
 
 Pressing **Ctrl+O** expands the row to inspect the full syntax-highlighted script, per-call timings, models cost breakdown, errors, and complete output.

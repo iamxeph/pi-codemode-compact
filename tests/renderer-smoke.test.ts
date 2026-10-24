@@ -168,13 +168,13 @@ test("live clocks tick and stop on completion, errors, abort, session switch and
 		renderers.renderCall!({ code: "text(1);" }, theme, ctx);
 		ctx.state.codemodeCompactClock.startedAt = performance.now() - 4200;
 		component = renderers.renderResult!({ content: [], details: { calls: [] } }, { ...options, isPartial: true }, theme, ctx);
-		assert.match(lines(component)[0], /^… running · 4s$/);
+		assert.match(lines(component)[0], /^codemode … text\(1\); · 4s$/);
 		const count = intervals.mock.callCount();
 		renderers.renderResult!({ content: [], details: { calls: [] } }, { ...options, isPartial: true }, theme, ctx);
 		assert.equal(intervals.mock.callCount(), count, "Rerender must not duplicate timers");
 		now += 1000;
 		mock.timers.tick(1000);
-		assert.match(lines(component)[0], /^… running · 5s$/, "Elapsed time updates at layout time");
+		assert.match(lines(component)[0], /^codemode … text\(1\); · 5s$/, "Elapsed time updates at layout time");
 		return ctx;
 	};
 	try {
@@ -229,8 +229,9 @@ test("real Pi host: padding is applied once and inline images still obey showIma
 		host.markExecutionStarted();
 		const rows = () => lines(host, 40).filter((line) => line.trim());
 		host.updateResult({ content: [], details: { calls: [] }, isError: false }, true);
-		assert.equal(rows().length, 2, "A running script keeps its call row");
-		assert.match(rows()[0], /^\s*codemode /);
+		assert.equal(rows().length, 1, "The running row replaces the call row");
+		// 40 columns minus padding leaves too little room for the title, so the status row stands alone
+		assert.match(rows()[0], /^\s*… mcp__x.* · 0s$/);
 		host.updateResult({ ...result, content: [...result.content, png], isError: false }, false);
 		assert.equal(rows().length, 1, "The final result row replaces the call row");
 		assert.match(rows()[0], /0\.1s$/, "Real host falls back to header time without recorded durationMs");

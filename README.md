@@ -4,12 +4,12 @@ A compact single-line summary renderer for [Pi Coding Agent](https://github.com/
 
 > I love `codemode` and run it with `codemode.mode: "only"`, but the default multi-line renderer took up way too much precious vertical screen space on every turn. So I vibe-coded this to reclaim my terminal.
 
-**pi-codemode-compact** leaves execution, sandboxing, and LLM context completely untouched while compacting the interactive terminal display into clean, information-dense single-line rows (the call and running rows take 1 line each while the script runs; once it finishes, the result row replaces both, so a finished call takes 1 line):
+**pi-codemode-compact** leaves execution, sandboxing, and LLM context completely untouched while compacting the interactive terminal display into clean, information-dense single-line rows: each call takes 1 line, which shows the script's tools while arguments stream in, live progress while it runs, and the result once it finishes:
 
 ```text
 Call:    codemode todo, write, bash · 118 lines
-Running: … bash · 3 calls · 4s
-Result:  codemode ✓ todo, write, bash · 4 lines · 1 image · 0.1s · $0.02   (replaces the call row)
+Running: codemode … bash · 3 calls · 4s   (replaces the call row)
+Result:  codemode ✓ todo, write, bash · 4 lines · 1 image · 0.1s · $0.02
 Error:   codemode ✗ read — Error: ENOENT: no such file or directory · 0.4s
 Aborted: codemode ⊘ aborted · bash cancelled · 4.9s
 ```
@@ -28,7 +28,7 @@ Pressing **Ctrl+O** expands the row to inspect the full syntax-highlighted scrip
 
 ## Features
 
-- **Space-Saving**: Replaces 10–20 rows of `codemode` output with a clean 1-line summary once the script finishes. A script without nested tool calls is named by its first code line.
+- **Space-Saving**: Replaces 10–20 rows of `codemode` output with a clean 1-line summary, from the first streamed argument to the final result. Before its first nested call, a running script shows the tools it references; a script without nested tool calls is named by its first code line.
 - **Width-Aware**: Fits the actual rendering area, including shell padding, terminal resizing, and HTML exports.
 - **Key Metrics at a Glance**: Tools used, output line and image counts, execution time, and LLM cost (`$cost`).
 - **Live Timing**: Updates elapsed time in the running summary every second, in whole seconds. Final results prefer Pi’s recorded duration, falling back to the script header for older sessions and Pi versions.

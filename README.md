@@ -8,7 +8,7 @@ A compact single-line summary renderer for [Pi Coding Agent](https://github.com/
 
 ```text
 Call:    codemode todo, write, bash · 118 lines
-Running: codemode … bash · 3 calls · 4s
+Running: codemode ⧗ bash · 3 calls · 4s
 Result:  codemode ✓ todo, write, bash · 4 lines · 1 image · 0.1s · $0.02
 Error:   codemode ✗ read — Error: ENOENT: no such file or directory · 0.4s
 Aborted: codemode ⊘ aborted · bash cancelled · 4.9s

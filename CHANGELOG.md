@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.5.0](https://github.com/iamxeph/pi-codemode-compact/compare/v0.4.0...v0.5.0) (2026-10-24)
+
+
+### Features
+
+* **renderer:** collapse finished calls into one titled row, detect calls in templates and after regex literals ([#21](https://github.com/iamxeph/pi-codemode-compact/issues/21)) ([5f49581](https://github.com/iamxeph/pi-codemode-compact/commit/5f4958176293fd6f3c793a16637fe9925b23b295))
+* **renderer:** mark running scripts and calls with ⧗ ([#26](https://github.com/iamxeph/pi-codemode-compact/issues/26)) ([547c01b](https://github.com/iamxeph/pi-codemode-compact/commit/547c01b2c0e277cf8b726a1a7ab65be40662bb29))
+* **renderer:** show running scripts in the same single row ([#23](https://github.com/iamxeph/pi-codemode-compact/issues/23)) ([4e2780a](https://github.com/iamxeph/pi-codemode-compact/commit/4e2780a1a712eadad1fa8d53f3f40084611f3f8a))
+
 ## [0.4.0](https://github.com/iamxeph/pi-codemode-compact/compare/v0.3.0...v0.4.0) (2026-10-23)
 
 

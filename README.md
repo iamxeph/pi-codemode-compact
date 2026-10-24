@@ -31,14 +31,14 @@ Pressing **Ctrl+O** expands the row to inspect the full syntax-highlighted scrip
 - **Space-Saving**: Replaces 10–20 rows of `codemode` output with a clean 1-line summary, from the first streamed argument to the final result. Before its first nested call, a running script shows the tools it references; a script without nested tool calls is named by its first code line.
 - **Width-Aware**: Fits the actual rendering area, including shell padding, terminal resizing, and HTML exports. Narrow rows drop the `codemode` title and keep the status.
 - **Key Metrics at a Glance**: Tools used, output line and image counts, execution time, and LLM cost (`$cost`).
-- **Live Timing**: Updates elapsed time in the running summary every second, in whole seconds. Final results prefer Pi’s recorded duration, falling back to the script header for older sessions and Pi versions.
+- **Live Timing**: Updates elapsed time in the running summary every second, in whole seconds. Final results prefer Pi’s recorded duration, falling back to the script header for HTML exports and sessions recorded before Pi 1.1.
 - **Fully Expandable**: Press **Ctrl+O** anytime to inspect the full script source and raw output.
 
 ---
 
 ## Requirements
 
-- **Pi Coding Agent**: `>= 1.0.1` (`1.2.0` or later recommended).
+- **Pi Coding Agent**: `>= 1.2.0`.
 
 ---
 
@@ -63,8 +63,6 @@ Live timers stop on completion, errors, aborted runs, session changes, and reloa
 ---
 
 ## Known Limitations
-
-- **Early Progress on Older Pi**: Live timing refreshes after the first partial result. Pi 1.2.0 emits one before the first nested call; older supported versions may wait until a nested tool call begins, and the call row stays in place until then.
 
 - **Static Analysis Approximation**: The call line preview uses a lightweight scanner that skips strings, comments, and regex literals but keeps `${...}` interpolations. Dynamic property accesses (`tools[fn]`) and aliases (`const { read } = tools`) are omitted, and rare regex-versus-division ambiguities may hide or add a name. The result line always displays the authoritative runtime execution history once finished.
 

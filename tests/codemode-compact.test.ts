@@ -483,11 +483,11 @@ async function run() {
 	});
 
 	await check("runningLine: active tools with total call count", () => {
-		assert.equal(runningLine(theme, [call("read", "ok"), call("bash", "running")]), "… bash · 2 calls");
-		assert.equal(runningLine(theme, [call("read", "ok"), call("read", "ok")]), "… read×2 · 2 calls");
-		assert.equal(runningLine(theme, [call("bash", "running")]), "… bash · 1 call");
-		assert.equal(runningLine(theme, []), "… running");
-		assert.equal(runningLine(theme, [], 96, 4.9), "… running · 4s", "Live elapsed shows whole seconds");
+		assert.equal(runningLine(theme, [call("read", "ok"), call("bash", "running")]), "⧗ bash · 2 calls");
+		assert.equal(runningLine(theme, [call("read", "ok"), call("read", "ok")]), "⧗ read×2 · 2 calls");
+		assert.equal(runningLine(theme, [call("bash", "running")]), "⧗ bash · 1 call");
+		assert.equal(runningLine(theme, []), "⧗ running");
+		assert.equal(runningLine(theme, [], 96, 4.9), "⧗ running · 4s", "Live elapsed shows whole seconds");
 	});
 
 	await check("width guarantee: summary lines never exceed terminal column widths across 60-120", () => {
@@ -551,7 +551,7 @@ async function run() {
 			theme as never,
 			renderCtx({ isPartial: true }),
 		);
-		assert.deepEqual(renderLines(component), ["codemode … bash · 1 call"]);
+		assert.deepEqual(renderLines(component), ["codemode ⧗ bash · 1 call"]);
 	});
 
 	await check("renderResult (success): collapsed single-line vs expanded call details and output", () => {
@@ -607,10 +607,10 @@ async function run() {
 		renderCall({ code }, theme as never, { ...running, lastComponent: callRow }, KNOWN);
 		const runningRow = renderResult({ content: [], details: { calls: [] } }, { expanded: false, isPartial: true }, theme as never, running);
 		assert.deepEqual(renderLines(callRow).filter(Boolean), [], "Running scripts drop the call row");
-		assert.deepEqual(renderLines(runningRow), ["codemode … read · 0s"], "Before the first nested call, the script's tools are shown");
+		assert.deepEqual(renderLines(runningRow), ["codemode ⧗ read · 0s"], "Before the first nested call, the script's tools are shown");
 		renderResult({ content: [], details: { calls: [call("read", "running")] } }, { expanded: false, isPartial: true }, theme as never,
 			{ ...running, lastComponent: runningRow });
-		assert.deepEqual(renderLines(runningRow), ["codemode … read · 1 call · 0s"]);
+		assert.deepEqual(renderLines(runningRow), ["codemode ⧗ read · 1 call · 0s"]);
 
 		const done = renderCtx({ state, args: { code } });
 		renderCall({ code }, theme as never, { ...done, lastComponent: callRow }, KNOWN);

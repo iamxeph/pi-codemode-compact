@@ -7,7 +7,7 @@
  * into one single-line row per call; the running and result rows replace the call row once they exist:
  *
  *   Call:    codemode todo, write, bash · 118 lines   (referenced tools approximation)
- *   Running: codemode … bash · 3 calls · 4s
+ *   Running: codemode ⧗ bash · 3 calls · 4s
  *   Result:  codemode ✓ todo, write, bash · 4 lines · 1 image · 0.1s
  *   Error:   codemode ✗ read — Error: ENOENT: no such file or directory · 0.4s
  *   Aborted: codemode ⊘ aborted · bash cancelled · 4.9s
@@ -392,7 +392,7 @@ export function runningLine(theme: ThemeLike, calls: readonly NestedCall[], max:
 	const active = calls.filter((call) => call.status === "running");
 	// Before the first nested call, the script's own summary says what is about to run
 	const label = namesLabel(countNames((active.length > 0 ? active : calls).map((call) => call.name))) || planned || "running";
-	const head = theme.fg("warning", "…");
+	const head = theme.fg("warning", "⧗");
 	const total = calls.length;
 	const tail = theme.fg("dim",
 		(total > 0 ? ` · ${total} ${total === 1 ? "call" : "calls"}` : "") +
@@ -457,7 +457,7 @@ export function resultLine(
 function statusIcon(status: NestedCall["status"], theme: Theme): string {
 	switch (status) {
 		case "running":
-			return theme.fg("warning", "…");
+			return theme.fg("warning", "⧗");
 		case "ok":
 			return theme.fg("success", "✓");
 		case "error":

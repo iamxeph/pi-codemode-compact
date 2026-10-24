@@ -551,7 +551,7 @@ async function run() {
 			theme as never,
 			renderCtx({ isPartial: true }),
 		);
-		assert.deepEqual(renderLines(component), ["… bash · 1 call"]);
+		assert.deepEqual(renderLines(component), ["codemode … bash · 1 call"]);
 	});
 
 	await check("renderResult (success): collapsed single-line vs expanded call details and output", () => {
@@ -597,13 +597,20 @@ async function run() {
 		assert.equal(whole.split(longPath).length, 3, "Full args and full multi-line error survive expansion");
 	});
 
-	await check("final collapsed result replaces the call row; running and expanded rows keep it", () => {
+	await check("collapsed running and final rows replace the call row; expanded rows keep it", () => {
 		const code = "const x = 1;\nawait tools.read({});";
 		const state = {};
 		const running = renderCtx({ state, args: { code }, isPartial: true, executionStarted: true });
 		const callRow = renderCall({ code }, theme as never, running, KNOWN);
-		renderResult({ content: [], details: { calls: [] } }, { expanded: false, isPartial: true }, theme as never, running);
-		assert.deepEqual(renderLines(callRow), ["codemode read · 2 lines"], "Running scripts keep the call row");
+		assert.deepEqual(renderLines(callRow), ["codemode read · 2 lines"], "Before any result, the call row is the summary");
+		// Like Pi's host, every update reruns renderCall and then renderResult
+		renderCall({ code }, theme as never, { ...running, lastComponent: callRow }, KNOWN);
+		const runningRow = renderResult({ content: [], details: { calls: [] } }, { expanded: false, isPartial: true }, theme as never, running);
+		assert.deepEqual(renderLines(callRow).filter(Boolean), [], "Running scripts drop the call row");
+		assert.deepEqual(renderLines(runningRow), ["codemode … read · 0s"], "Before the first nested call, the script's tools are shown");
+		renderResult({ content: [], details: { calls: [call("read", "running")] } }, { expanded: false, isPartial: true }, theme as never,
+			{ ...running, lastComponent: runningRow });
+		assert.deepEqual(renderLines(runningRow), ["codemode … read · 1 call · 0s"]);
 
 		const done = renderCtx({ state, args: { code } });
 		renderCall({ code }, theme as never, { ...done, lastComponent: callRow }, KNOWN);

@@ -4,11 +4,11 @@
  * pi's default codemode renderer occupies significant vertical terminal space by displaying
  * a script preview (up to 10 lines), a nested tool call list, and an output preview (up to 5 lines).
  * This extension leaves execution and model exposure untouched while compacting the display
- * into single-line rows (call and running rows while the script runs; one result row once it finishes):
+ * into one single-line row per call; the running and result rows replace the call row once they exist:
  *
  *   Call:    codemode todo, write, bash · 118 lines   (referenced tools approximation)
- *   Running: … bash · 3 calls · 4s
- *   Result:  codemode ✓ todo, write, bash · 4 lines · 1 image · 0.1s   (replaces the call row)
+ *   Running: codemode … bash · 3 calls · 4s
+ *   Result:  codemode ✓ todo, write, bash · 4 lines · 1 image · 0.1s
  *   Error:   codemode ✗ read — Error: ENOENT: no such file or directory · 0.4s
  *   Aborted: codemode ⊘ aborted · bash cancelled · 4.9s
  *
@@ -388,9 +388,10 @@ export function callLine(
 }
 
 /** Formats an in-progress execution line with currently running tools and total call count. */
-export function runningLine(theme: ThemeLike, calls: readonly NestedCall[], max: number = MAX_SUMMARY, elapsed?: number): string {
+export function runningLine(theme: ThemeLike, calls: readonly NestedCall[], max: number = MAX_SUMMARY, elapsed?: number, planned?: string): string {
 	const active = calls.filter((call) => call.status === "running");
-	const label = namesLabel(countNames((active.length > 0 ? active : calls).map((call) => call.name))) || "running";
+	// Before the first nested call, the script's own summary says what is about to run
+	const label = namesLabel(countNames((active.length > 0 ? active : calls).map((call) => call.name))) || planned || "running";
 	const head = theme.fg("warning", "…");
 	const total = calls.length;
 	const tail = theme.fg("dim",
@@ -564,10 +565,12 @@ export function renderCall(
 		}
 	}
 	const state = context.state;
+	// The running row shows this until the first nested call reports in
+	if (context.argsComplete && code) state.codemodeCompactPlan = codeSummary(plain(code).trim(), isRegisteredTool);
 	return textComponent(context.lastComponent, (width) =>
-		// A final collapsed result row carries the summary alone, so the call row gives up its line.
+		// Once a result exists, the collapsed result row carries the summary alone and the call row gives up its line.
 		// Read at layout time: Pi renders the call before the result sets the flag.
-		!context.expanded && state.codemodeCompactFinal ? "" : callLine(theme, code, width, isRegisteredTool) + (body ? `\n${body}` : ""));
+		!context.expanded && state.codemodeCompactResult ? "" : callLine(theme, code, width, isRegisteredTool) + (body ? `\n${body}` : ""));
 }
 
 export function renderResult(
@@ -584,7 +587,8 @@ export function renderResult(
 	const clock = executionClock(context);
 	if (clock && (!options.isPartial || context.isError)) stopClock(clock);
 	const failed = context.isError === true || result.isError === true;
-	context.state.codemodeCompactFinal = !options.isPartial;
+	context.state.codemodeCompactResult = true;
+	const planned = context.state.codemodeCompactPlan as string | undefined;
 	const code = (context.args as { code?: unknown } | undefined)?.code;
 	const script = typeof code === "string" ? code : undefined;
 	return textComponent(context.lastComponent, (width) => {
@@ -594,12 +598,11 @@ export function renderResult(
 			truncated: result.details?.fullOutputPath !== undefined,
 			failed, script,
 		}, max);
+		const summary = (max: number) => options.isPartial ? runningLine(theme, calls, max, elapsed, planned) : final(max);
 		// The lone collapsed row takes over the call row's title; narrow rows keep the status instead
 		const title = theme.fg("toolTitle", theme.bold("codemode"));
 		const room = width - visibleWidth(title) - 1;
-		const lines = options.isPartial
-			? [runningLine(theme, calls, width, elapsed)]
-			: [!options.expanded && room >= MIN_TITLED ? `${title} ${final(room)}` : final(width)];
+		const lines = [!options.expanded && room >= MIN_TITLED ? `${title} ${summary(room)}` : summary(width)];
 		if (options.expanded) {
 			for (const call of calls) lines.push(callDetail(theme, call));
 			const fullOutputPath = result.details?.fullOutputPath;

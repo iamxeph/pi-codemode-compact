@@ -4,13 +4,13 @@
  * pi's default codemode renderer occupies significant vertical terminal space by displaying
  * a script preview (up to 10 lines), a nested tool call list, and an output preview (up to 5 lines).
  * This extension leaves execution and model exposure untouched while compacting the display
- * into single-line rows (each collapsed component is 1 line; after completion, pi stacks them into 2 lines total):
+ * into single-line rows (call and running rows while the script runs; one result row once it finishes):
  *
  *   Call:    codemode todo, write, bash · 118 lines   (referenced tools approximation)
  *   Running: … bash · 3 calls · 4s
- *   Result:  ✓ todo, write, bash · 4 lines · 1 image · 0.1s
- *   Error:   ✗ read — Error: ENOENT: no such file or directory · 0.4s
- *   Aborted: ⊘ aborted · bash cancelled · 4.9s
+ *   Result:  codemode ✓ todo, write, bash · 4 lines · 1 image · 0.1s   (replaces the call row)
+ *   Error:   codemode ✗ read — Error: ENOENT: no such file or directory · 0.4s
+ *   Aborted: codemode ⊘ aborted · bash cancelled · 4.9s
  *
  * Expanding (Ctrl+O) reveals syntax-highlighted code, per-call timings, models cost, errors, and full output.
  *
@@ -21,9 +21,9 @@
  * factory registered `codemode` (resolvers fall back to the registered renderers via next()).
  *
  * Known design trade-offs (static analysis approximation):
- * - Tool preview in callLine uses lightweight regex-based static analysis rather than a full JS AST parser:
- *   template-literal interpolations (${tools.x}), dynamic accesses (tools[fn]), and regex literals
- *   containing tool accesses (/tools.read/g) are omitted or may yield false positives.
+ * - Tool preview in callLine uses a lightweight scanner rather than a full JS parser: dynamic accesses
+ *   (tools[fn]) and aliases (const { read } = tools) are omitted, and rare regex-versus-division
+ *   ambiguities may hide or add a name.
  * - Authoritative, exact execution history, timings, and cost are always reported in resultLine via details.calls.
  */
 import {
@@ -77,6 +77,8 @@ const MAX_SUMMARY = 96;
  * Matches pi's default CALL_PREVIEW_COUNT (8) for parity.
  */
 const MAX_NAMES = 8;
+/** Narrowest result summary that still gets the codemode title in front of it. */
+const MIN_TITLED = 24;
 /** Terminal column width consumed by the result status icon and space ("✓ " / "✗ "). */
 const ICON_COLUMNS = 2;
 
@@ -91,16 +93,8 @@ const TOOL_DOT = /\btools\s*\.\s*([A-Za-z_$][\w$]*)/g;
  */
 const TOOL_KEY = /\btools\s*\[\s*["']([^"']+)["']\s*\]/g;
 
-/**
- * Strips strings, template literals, and comments in a single pass:
- * 1. Double-quoted strings: "(?:\\.|[^"\\\n])*"
- * 2. Single-quoted strings: '(?:\\.|[^'\\\n])*'
- * 3. Template literals: `(?:\\.|[^`\\])*`
- * 4. Multi-line comments: /\*[\s\S]*?\* /
- * 5. Single-line comments: //[^\n]*
- * Replaced with spaces so that word boundaries (\b) are preserved.
- */
-const STRINGS_AND_COMMENTS = /"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'|`(?:\\.|[^`\\])*`|\/\*[\s\S]*?\*\/|\/\/[^\n]*/g;
+/** Words after which `/` starts a regex literal instead of a division. */
+const REGEX_AFTER_WORD = /(?:^|[^\w$])(?:return|typeof|instanceof|in|of|new|delete|void|throw|case|do|else|yield|await)$/;
 
 /** Regex matching pi's script execution header. */
 const SCRIPT_HEADER = /^Script (?:completed|failed)\nWall time ([\d.]+) seconds\nOutput:\n/;
@@ -146,6 +140,102 @@ export function summaryWidth(columns?: number): number {
 }
 
 /**
+ * Index ranges of strings, template-literal text, comments, and regex literals in script code.
+ * `${...}` interpolations stay code, so tool calls inside template literals still count.
+ * Like JS tokenizers, the previous token tells a regex literal from a division.
+ * shortcut: `}` before `/` always reads as an expression end and `x++ / y` as a regex; a real tokenizer would track both.
+ */
+export function noiseSpans(code: string): Array<[number, number]> {
+	const spans: Array<[number, number]> = [];
+	// Unclosed `{` count inside each enclosing `${`
+	const depths: number[] = [];
+	// Last significant code character, and whether a string, template, or regex literal ended after it
+	let prev = -1;
+	let afterLiteral = false;
+	const regexAllowed = () => {
+		if (afterLiteral) return false;
+		if (prev < 0) return true;
+		const ch = code[prev];
+		if (/[\w$]/.test(ch)) return REGEX_AFTER_WORD.test(code.slice(Math.max(0, prev - 10), prev + 1));
+		return !")]}".includes(ch);
+	};
+	// Scans template text from `start` (its backtick or the `}` closing an interpolation) to the closing backtick or next `${`
+	const template = (start: number): number => {
+		for (let i = start + 1; i < code.length; i++) {
+			if (code[i] === "\\") i++;
+			else if (code[i] === "`") {
+				spans.push([start, i + 1]);
+				afterLiteral = true;
+				return i + 1;
+			} else if (code[i] === "$" && code[i + 1] === "{") {
+				spans.push([start, i + 2]);
+				depths.push(0);
+				prev = i + 1;
+				afterLiteral = false;
+				return i + 2;
+			}
+		}
+		spans.push([start, code.length]);
+		return code.length;
+	};
+	let i = 0;
+	while (i < code.length) {
+		const ch = code[i];
+		const start = i;
+		if (ch === '"' || ch === "'") {
+			let j = i + 1;
+			while (j < code.length && code[j] !== ch && code[j] !== "\n") j += code[j] === "\\" ? 2 : 1;
+			i = Math.min(j + 1, code.length);
+			spans.push([start, i]);
+			afterLiteral = true;
+		} else if (ch === "`") {
+			i = template(i);
+		} else if (ch === "/" && code[i + 1] === "/") {
+			const end = code.indexOf("\n", i);
+			i = end < 0 ? code.length : end;
+			spans.push([start, i]);
+		} else if (ch === "/" && code[i + 1] === "*") {
+			const end = code.indexOf("*/", i + 2);
+			i = end < 0 ? code.length : end + 2;
+			spans.push([start, i]);
+		} else if (ch === "}" && depths.at(-1) === 0) {
+			depths.pop();
+			i = template(i);
+		} else {
+			let end = -1;
+			if (ch === "/" && regexAllowed()) {
+				// A regex literal ends on its line at the first `/` outside a character class
+				let inClass = false;
+				for (let j = i + 1; j < code.length && code[j] !== "\n"; j++) {
+					if (code[j] === "\\") j++;
+					else if (code[j] === "[") inClass = true;
+					else if (code[j] === "]") inClass = false;
+					else if (code[j] === "/" && !inClass) {
+						end = j + 1;
+						break;
+					}
+				}
+			}
+			if (end > 0) {
+				while (end < code.length && /[\w$]/.test(code[end])) end++;
+				spans.push([start, end]);
+				afterLiteral = true;
+				i = end;
+			} else {
+				if (depths.length > 0 && ch === "{") depths[depths.length - 1]++;
+				else if (depths.length > 0 && ch === "}") depths[depths.length - 1]--;
+				if (!/\s/.test(ch)) {
+					prev = i;
+					afterLiteral = false;
+				}
+				i++;
+			}
+		}
+	}
+	return spans;
+}
+
+/**
  * Aggregates nested tool calls from script code in order of appearance.
  * Filters out references inside comments and string literals.
  * If isRegisteredTool filter is provided, only matches recognized tool names.
@@ -161,11 +251,8 @@ export function toolUsage(
 		}
 	};
 
-	const noiseSpans = [...code.matchAll(STRINGS_AND_COMMENTS)].map((m) => [
-		m.index ?? 0,
-		(m.index ?? 0) + m[0].length,
-	]);
-	const isInsideNoise = (index: number) => noiseSpans.some(([start, end]) => index >= start && index < end);
+	const spans = noiseSpans(code);
+	const isInsideNoise = (index: number) => spans.some(([start, end]) => index >= start && index < end);
 
 	const matches: Array<{ name: string; index: number }> = [];
 
@@ -318,7 +405,7 @@ export function runningLine(theme: ThemeLike, calls: readonly NestedCall[], max:
 /** Formats a single collapsed result line for success or failure. */
 export function resultLine(
 	theme: ThemeLike,
-	view: { calls: readonly NestedCall[]; body: string; durationSeconds?: number; images?: number; truncated: boolean; failed: boolean },
+	view: { calls: readonly NestedCall[]; body: string; durationSeconds?: number; images?: number; truncated: boolean; failed: boolean; script?: string },
 	max: number = MAX_SUMMARY,
 ): string {
 	const budget = Math.max(0, max - ICON_COLUMNS);
@@ -346,7 +433,8 @@ export function resultLine(
 		const row = `${aborted ? "⊘" : "✗"} ${clipEnd(label, budget - visibleWidth(tail))}${tail}`;
 		return truncateToWidth(theme.fg(aborted ? "muted" : "error", row), max, "…");
 	}
-	const names = namesLabel(countNames(view.calls.map((call) => call.name))) || "done";
+	// The final row stands alone (the call row hides), so a script without tool calls names its first code line
+	const names = namesLabel(countNames(view.calls.map((call) => call.name))) || firstCodeLine(plain(view.script ?? "")) || "done";
 	// Scripts that catch nested failures (try/catch, Promise.allSettled) still succeed; keep those failures visible
 	const errored = namesLabel(countNames(view.calls.filter((call) => call.status === "error").map((call) => call.name)));
 	const parts: string[] = [];
@@ -475,8 +563,11 @@ export function renderCall(
 			body = script; // Fallback if syntax highlighting fails
 		}
 	}
+	const state = context.state;
 	return textComponent(context.lastComponent, (width) =>
-		callLine(theme, code, width, isRegisteredTool) + (body ? `\n${body}` : ""));
+		// A final collapsed result row carries the summary alone, so the call row gives up its line.
+		// Read at layout time: Pi renders the call before the result sets the flag.
+		!context.expanded && state.codemodeCompactFinal ? "" : callLine(theme, code, width, isRegisteredTool) + (body ? `\n${body}` : ""));
 }
 
 export function renderResult(
@@ -493,15 +584,22 @@ export function renderResult(
 	const clock = executionClock(context);
 	if (clock && (!options.isPartial || context.isError)) stopClock(clock);
 	const failed = context.isError === true || result.isError === true;
+	context.state.codemodeCompactFinal = !options.isPartial;
+	const code = (context.args as { code?: unknown } | undefined)?.code;
+	const script = typeof code === "string" ? code : undefined;
 	return textComponent(context.lastComponent, (width) => {
 		const elapsed = clock ? Math.max(0, (clock.endedAt ?? performance.now()) - clock.startedAt) / 1000 : undefined;
+		const final = (max: number) => resultLine(theme, {
+			calls, body, durationSeconds, images,
+			truncated: result.details?.fullOutputPath !== undefined,
+			failed, script,
+		}, max);
+		// The lone collapsed row takes over the call row's title; narrow rows keep the status instead
+		const title = theme.fg("toolTitle", theme.bold("codemode"));
+		const room = width - visibleWidth(title) - 1;
 		const lines = options.isPartial
 			? [runningLine(theme, calls, width, elapsed)]
-			: [resultLine(theme, {
-					calls, body, durationSeconds, images,
-					truncated: result.details?.fullOutputPath !== undefined,
-					failed,
-				}, width)];
+			: [!options.expanded && room >= MIN_TITLED ? `${title} ${final(room)}` : final(width)];
 		if (options.expanded) {
 			for (const call of calls) lines.push(callDetail(theme, call));
 			const fullOutputPath = result.details?.fullOutputPath;

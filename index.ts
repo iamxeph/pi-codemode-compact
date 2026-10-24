@@ -14,7 +14,7 @@
  *
  * Expanding (Ctrl+O) reveals syntax-highlighted code, per-call timings, models cost, errors, and full output.
  *
- * Wiring: We register a renderer resolver (pi.registerToolRenderer, pi >= 1.0.1) that attaches the compact
+ * Wiring: We register a renderer resolver (pi.registerToolRenderer) that attaches the compact
  * renderers to the `codemode` tool by name. The built-in extension's definition (execution, store
  * persistence, models API, namespaces) stays untouched, so nothing is re-registered: no replacement
  * warning, no mid-session tool redefinition, and the renderers apply no matter which extension or SDK
@@ -581,7 +581,7 @@ export function renderResult(
 ): Text {
 	const calls = result.details?.calls ?? [];
 	const { body, wallTime: headerSeconds } = splitScriptOutput(result.content ?? []);
-	// Compatibility for old sessions and HTML exports; remove `?? headerSeconds` to drop the fallback.
+	// HTML exports and sessions recorded before Pi 1.1 carry no durationMs; the script header still has the time.
 	const durationSeconds = recordedDurationSeconds(context.durationMs) ?? headerSeconds;
 	const images = result.content?.filter((item) => item.type === "image").length ?? 0;
 	const clock = executionClock(context);
@@ -643,8 +643,6 @@ export default function codemodeCompact(pi: ExtensionAPI): void {
 							if (!options.isPartial || context.isError) {
 								clocks.delete(clock);
 							} else if (clock.endedAt === undefined && !clock.interval) {
-								// ponytail: Pi < 1.2 can delay the first partial result until a nested call;
-								// upgrading Pi enables immediate ticks without replacing tool execution.
 								clock.interval = setInterval(() => context.invalidate(), 1000);
 								clock.interval.unref();
 								clocks.add(clock);

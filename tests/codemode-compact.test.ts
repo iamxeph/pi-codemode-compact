@@ -146,6 +146,27 @@ async function run() {
 		]);
 	});
 
+	await check("toolUsage: template interpolations are code, template text is not", () => {
+		assert.deepEqual(toolUsage('text(`${(await tools.bash({ command: "ls" })).output}`);'), [{ name: "bash", count: 1 }]);
+		const nested = 'text(`tools.write ${`b ${await tools.read({})}`} ${ { x: 1 }.x } ${await tools.edit({})}`);';
+		assert.deepEqual(toolUsage(nested), [{ name: "read", count: 1 }, { name: "edit", count: 1 }]);
+	});
+
+	await check("toolUsage: regex literals hide neither later calls nor count their own text", () => {
+		assert.deepEqual(toolUsage('const re = /"/g;\nawait tools.read({ path: "a" });'), [{ name: "read", count: 1 }]);
+		assert.deepEqual(toolUsage("const re = /`/;\nawait tools.read({});\nconst s = `x`;\nawait tools.write({});"), [
+			{ name: "read", count: 1 },
+			{ name: "write", count: 1 },
+		]);
+		assert.deepEqual(toolUsage("const re = /[/']/;\nawait tools.edit({});"), [{ name: "edit", count: 1 }]);
+		assert.deepEqual(toolUsage("function f(s) { return /tools.read/.test(s); }\nawait tools.bash({});"), [{ name: "bash", count: 1 }]);
+		// Division is not a regex: both calls survive
+		assert.deepEqual(toolUsage("const r = a / b;\nawait tools.read({});\nconst s = (c) / 2;\nawait tools.write({});"), [
+			{ name: "read", count: 1 },
+			{ name: "write", count: 1 },
+		]);
+	});
+
 	await check("toolUsage: template literal calls are not counted (documented limit)", () => {
 		assert.deepEqual(toolUsage("await tools[`read`]({});"), []);
 	});
@@ -539,7 +560,7 @@ async function run() {
 			details: { calls: [call("read", "ok", { durationMs: 12 }), call("bash", "ok", { durationMs: 1234, cost: 0.02 })] },
 		};
 		assert.deepEqual(renderLines(renderResult(result, { expanded: false, isPartial: false }, theme as never, renderCtx())), [
-			"✓ read, bash · 2 lines · 0.1s · $0.02",
+			"codemode ✓ read, bash · 2 lines · 0.1s · $0.02",
 		]);
 
 		const expanded = renderLines(renderResult(result, { expanded: true, isPartial: false }, theme as never, renderCtx({ expanded: true })));
@@ -557,11 +578,11 @@ async function run() {
 		};
 		// Without context.isError, result without error status displays as checkmark
 		assert.ok(
-			firstLine(renderResult(failedRun, { expanded: false, isPartial: false }, theme as never, renderCtx())).startsWith("✓"),
+			firstLine(renderResult(failedRun, { expanded: false, isPartial: false }, theme as never, renderCtx())).startsWith("codemode ✓"),
 		);
 		assert.equal(
 			firstLine(renderResult(failedRun, { expanded: false, isPartial: false }, theme as never, renderCtx({ isError: true }))),
-			"✗ read — Error: ENOENT: no such file or directory · 0.4s",
+			"codemode ✗ read — Error: ENOENT: no such file or directory · 0.4s",
 		);
 		const expanded = renderLines(
 			renderResult(failedRun, { expanded: true, isPartial: false }, theme as never, renderCtx({ expanded: true, isError: true })),
@@ -574,6 +595,33 @@ async function run() {
 			{ expanded: true, isPartial: false }, theme as never, renderCtx({ expanded: true, isError: true }),
 		)).join("\n");
 		assert.equal(whole.split(longPath).length, 3, "Full args and full multi-line error survive expansion");
+	});
+
+	await check("final collapsed result replaces the call row; running and expanded rows keep it", () => {
+		const code = "const x = 1;\nawait tools.read({});";
+		const state = {};
+		const running = renderCtx({ state, args: { code }, isPartial: true, executionStarted: true });
+		const callRow = renderCall({ code }, theme as never, running, KNOWN);
+		renderResult({ content: [], details: { calls: [] } }, { expanded: false, isPartial: true }, theme as never, running);
+		assert.deepEqual(renderLines(callRow), ["codemode read · 2 lines"], "Running scripts keep the call row");
+
+		const done = renderCtx({ state, args: { code } });
+		renderCall({ code }, theme as never, { ...done, lastComponent: callRow }, KNOWN);
+		const resultRow = renderResult({ content: [{ type: "text", text: HEADER_OK + "1" }], details: { calls: [call("read", "ok")] } },
+			{ expanded: false, isPartial: false }, theme as never, done);
+		// The stub Text renders "" as one blank line; the real-host smoke test checks it takes no row
+		assert.deepEqual(renderLines(callRow).filter(Boolean), [], "Final collapsed call row renders nothing");
+		assert.deepEqual(renderLines(resultRow), ["codemode ✓ read · 1 line · 0.1s"]);
+		assert.equal(resultRow.render(30)[0].trimEnd(), "✓ read · 1 line · 0.1s", "Narrow rows drop the title before the status");
+
+		const expanded = renderCtx({ state, args: { code }, expanded: true });
+		renderCall({ code }, theme as never, { ...expanded, lastComponent: callRow }, KNOWN);
+		assert.equal(renderLines(callRow)[0], "codemode read · 2 lines", "Expanded rows show the call and script again");
+
+		// No nested calls: the lone row names the script by its first code line
+		const plainRun = renderCtx({ args: { code: '// @options: {"timeout_ms": 1000}\nreturn 1 + 1;' } });
+		assert.equal(firstLine(renderResult({ content: [{ type: "text", text: HEADER_OK + "2" }] },
+			{ expanded: false, isPartial: false }, theme as never, plainRun)), "codemode ✓ return 1 + 1; · 1 line · 0.1s");
 	});
 
 	await check("renderResult: safe with truncated outputs, empty results, and image-only blocks", () => {
@@ -590,7 +638,7 @@ async function run() {
 
 		assert.equal(
 			firstLine(renderResult({ content: [] }, { expanded: false, isPartial: false }, theme as never, renderCtx())),
-			"✓ done",
+			"codemode ✓ done",
 		);
 		assert.equal(
 			firstLine(
@@ -601,7 +649,7 @@ async function run() {
 					renderCtx(),
 				),
 			),
-			"✓ done · 1 image",
+			"codemode ✓ done · 1 image",
 		);
 	});
 
@@ -631,7 +679,7 @@ async function run() {
 				content: [{ type: "text", text: HEADER_OK + "hello" }],
 				details: { calls: [call("read", "ok")] },
 			}, { expanded: false, isPartial: false }, theme, renderCtx())),
-			"✓ read · 1 line · 0.1s",
+			"codemode ✓ read · 1 line · 0.1s",
 		);
 	});
 

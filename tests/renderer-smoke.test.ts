@@ -95,31 +95,31 @@ test("recorded durations win, with zero, invalid-value, old-session and HTML fal
 	}
 	const rejected = { content: [{ type: "text", text: "Invalid options" }] };
 	assert.equal(lines(renderResult(rejected, options, theme, context({ durationMs: 2500 })))[0],
-		"✓ done · 1 line · 2.5s");
+		"codemode ✓ done · 1 line · 2.5s");
 	assert.equal(lines(renderResult(rejected, options, theme, context({ isError: true, durationMs: 2500 })))[0],
-		"✗ Invalid options · 2.5s");
+		"codemode ✗ Invalid options · 2.5s");
 	const failed = { content: [{ type: "text", text: header.replace("completed", "failed") + "Invalid options" }] };
 	assert.equal(lines(renderResult(failed, options, theme, context({ isError: true })))[0],
-		"✗ Invalid options · 0.1s");
+		"codemode ✗ Invalid options · 0.1s");
 	assert.equal(lines(renderResult(failed, options, theme, context({ isError: true, durationMs: 0 })))[0],
-		"✗ Invalid options · 0.0s");
+		"codemode ✗ Invalid options · 0.0s");
 	for (const durationMs of [undefined, NaN, -1, Infinity]) {
 		assert.equal(lines(renderResult(rejected, options, theme, context({ isError: true, durationMs })))[0],
-			"✗ Invalid options");
+			"codemode ✗ Invalid options");
 	}
-	assert.equal(lines(renderResult({ content: [] }, options, theme, context()))[0], "✓ done");
+	assert.equal(lines(renderResult({ content: [] }, options, theme, context()))[0], "codemode ✓ done");
 });
 
 test("new text/console boundaries and image paths survive expansion; images are counted without mutation", () => {
 	const body = "==> text 1/2 <==\nA\n==> text 2/2 <==\nB\n<console_output>\nC\n</console_output>\n[Image saved to /tmp/image.png (image/png)]";
 	const mixed = { content: [{ type: "text", text: header }, { type: "text", text: body }, png, png], details: { calls: [] } };
 	const before = structuredClone(mixed);
-	assert.equal(lines(renderResult(mixed, options, theme, context()))[0], "✓ done · 8 lines · 2 images · 0.1s");
+	assert.equal(lines(renderResult(mixed, options, theme, context()))[0], "codemode ✓ done · 8 lines · 2 images · 0.1s");
 	for (const showImages of [false, true]) {
 		const expanded = lines(renderResult(mixed, { ...options, expanded: true }, theme, context({ expanded: true, showImages }))).join("\n");
 		assert.ok(expanded.includes(body));
 	}
-	assert.equal(lines(renderResult({ content: [png] }, options, theme, context()))[0], "✓ done · 1 image");
+	assert.equal(lines(renderResult({ content: [png] }, options, theme, context()))[0], "codemode ✓ done · 1 image");
 	assert.deepEqual(mixed, before);
 });
 
@@ -147,7 +147,7 @@ test("actual Pi loader supplies host modules regardless of peer version metadata
 			assert.ok(call instanceof Text, "Extension must use the host TUI module");
 			assert.deepEqual(lines(call, 40), ["codemode text(1);"]);
 			const output = renderers.renderResult(result, options, theme, context({ durationMs: 2500 }));
-			assert.deepEqual(lines(output, 40), ["✓ done · 1 line · 2.5s"]);
+			assert.deepEqual(lines(output, 40), ["codemode ✓ done · 1 line · 2.5s"]);
 		} finally {
 			await rm(dir, { recursive: true, force: true });
 		}
@@ -227,21 +227,29 @@ test("real Pi host: padding is applied once and inline images still obey showIma
 			{ showImages: false, outputPad: 4 }, renderers as ToolRenderers, { requestRender() {} }, process.cwd());
 		host.setArgsComplete();
 		host.markExecutionStarted();
+		const rows = () => lines(host, 40).filter((line) => line.trim());
+		host.updateResult({ content: [], details: { calls: [] }, isError: false }, true);
+		assert.equal(rows().length, 2, "A running script keeps its call row");
+		assert.match(rows()[0], /^\s*codemode /);
 		host.updateResult({ ...result, content: [...result.content, png], isError: false }, false);
-		assert.equal(lines(host, 40).filter((line) => line.trim()).length, 2);
-		assert.match(lines(host, 40).filter((line) => line.trim())[1], /0\.1s$/, "Real host falls back to header time without recorded durationMs");
+		assert.equal(rows().length, 1, "The final result row replaces the call row");
+		assert.match(rows()[0], /0\.1s$/, "Real host falls back to header time without recorded durationMs");
 		host.updateResult({ ...result, content: [...result.content, png], isError: false, durationMs: 2500 }, false);
-		assert.match(lines(host, 40).filter((line) => line.trim())[1], /2\.5s$/, "Real host passes recorded durationMs through to the renderer");
+		assert.match(rows()[0], /2\.5s$/, "Real host passes recorded durationMs through to the renderer");
 		assert.ok(lines(host, 40).every((line) => visibleWidth(line) <= 40));
 		if (typeof host.setOutputPad === "function") {
 			host.setOutputPad(8);
-			assert.equal(lines(host, 40).filter((line) => line.trim()).length, 2);
+			assert.equal(rows().length, 1);
 		}
 		assert.ok(!host.render(40).some((line: string) => line.includes("\x1b_G")));
 		host.setShowImages(true);
 		assert.ok(host.render(40).some((line: string) => line.includes("\x1b_G")));
 		host.setExpanded(true);
 		assert.ok(lines(host, 40).join("\n").includes("hello"));
+		assert.match(rows()[0], /^\s*codemode /, "Expanding brings the call row and script back");
+		host.setExpanded(false);
+		assert.equal(rows().length, 1);
+		host.setExpanded(true);
 		host.setShowImages(false);
 		assert.ok(!host.render(40).some((line: string) => line.includes("\x1b_G")));
 	} finally {

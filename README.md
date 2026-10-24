@@ -4,14 +4,14 @@ A compact single-line summary renderer for [Pi Coding Agent](https://github.com/
 
 > I love `codemode` and run it with `codemode.mode: "only"`, but the default multi-line renderer took up way too much precious vertical screen space on every turn. So I vibe-coded this to reclaim my terminal.
 
-**pi-codemode-compact** leaves execution, sandboxing, and LLM context completely untouched while compacting the interactive terminal display into clean, information-dense single-line rows (collapsed call and result rows take 1 line each; stacked into 2 lines total upon completion):
+**pi-codemode-compact** leaves execution, sandboxing, and LLM context completely untouched while compacting the interactive terminal display into clean, information-dense single-line rows (the call and running rows take 1 line each while the script runs; once it finishes, the result row replaces both, so a finished call takes 1 line):
 
 ```text
 Call:    codemode todo, write, bash · 118 lines
 Running: … bash · 3 calls · 4s
-Result:  ✓ todo, write, bash · 4 lines · 1 image · 0.1s · $0.02
-Error:   ✗ read — Error: ENOENT: no such file or directory · 0.4s
-Aborted: ⊘ aborted · bash cancelled · 4.9s
+Result:  codemode ✓ todo, write, bash · 4 lines · 1 image · 0.1s · $0.02   (replaces the call row)
+Error:   codemode ✗ read — Error: ENOENT: no such file or directory · 0.4s
+Aborted: codemode ⊘ aborted · bash cancelled · 4.9s
 ```
 
 Pressing **Ctrl+O** expands the row to inspect the full syntax-highlighted script, per-call timings, models cost breakdown, errors, and complete output.
@@ -28,7 +28,7 @@ Pressing **Ctrl+O** expands the row to inspect the full syntax-highlighted scrip
 
 ## Features
 
-- **Space-Saving**: Replaces 10–20 rows of `codemode` output with a clean 2-line summary.
+- **Space-Saving**: Replaces 10–20 rows of `codemode` output with a clean 1-line summary once the script finishes. A script without nested tool calls is named by its first code line.
 - **Width-Aware**: Fits the actual rendering area, including shell padding, terminal resizing, and HTML exports.
 - **Key Metrics at a Glance**: Tools used, output line and image counts, execution time, and LLM cost (`$cost`).
 - **Live Timing**: Updates elapsed time in the running summary every second, in whole seconds. Final results prefer Pi’s recorded duration, falling back to the script header for older sessions and Pi versions.
@@ -66,7 +66,9 @@ Live timers stop on completion, errors, aborted runs, session changes, and reloa
 
 - **Early Progress on Older Pi**: Live timing refreshes after the first partial result. Pi 1.2.0 emits one before the first nested call; older supported versions may wait until a nested tool call begins.
 
-- **Static Analysis Approximation**: The call line preview uses regex-based static scanning. Dynamic property accesses (`tools[fn]`), template-literal interpolations (`${tools.x}`), and regex literals containing tool accesses (`/tools.read/g`) may be omitted or yield false positives. The result line always displays the authoritative runtime execution history once finished.
+- **Static Analysis Approximation**: The call line preview uses a lightweight scanner that skips strings, comments, and regex literals but keeps `${...}` interpolations. Dynamic property accesses (`tools[fn]`) and aliases (`const { read } = tools`) are omitted, and rare regex-versus-division ambiguities may hide or add a name. The result line always displays the authoritative runtime execution history once finished.
+
+- **HTML Exports Keep Two Rows**: The exporter draws the call row before the result exists, so exported sessions still show the call summary above the titled result.
 
 ---
 

@@ -14,7 +14,7 @@ const options = { expanded: false, isPartial: false };
 const context = (extra: Partial<RenderContext> = {}): RenderContext => ({
 	args: {}, toolCallId: "smoke", invalidate() {}, lastComponent: undefined, state: {}, cwd: process.cwd(),
 	executionStarted: false, argsComplete: true, isPartial: false, expanded: false, showImages: false,
-	isError: false, durationMs: undefined, outputPad: 1, ...extra,
+	isError: false, durationMs: undefined, outputPad: 1, keyText: () => "", keyHint: () => "", ...extra,
 });
 const lines = (component: { render(width: number): string[] }, width = 100) =>
 	component.render(width).map((line) => plain(line).trimEnd());
@@ -31,6 +31,10 @@ function wiring() {
 	} as unknown as ExtensionAPI);
 	return { renderers: resolver!("codemode", () => undefined)!, events };
 }
+
+test("real pi-tui: plain strips CSI sequences without eating the text after them", () => {
+	assert.equal(plain("a\x1b[<35;59;1Mb\x1b[>0;276;0cc\x1b[?25ld\x9b2Je\x1b[31mf"), "abcdef");
+});
 
 test("real Text: collapsed rows stay one line at the actual width, including resize and Unicode", () => {
 	const oldColumns = process.stdout.columns;

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/iamxeph/pi-codemode-compact/compare/v0.5.0...v0.5.1) (2026-11-19)
+
+
+### Bug Fixes
+
+* **renderer:** strip full CSI sequences and update Pi 1.5 compatibility ([#29](https://github.com/iamxeph/pi-codemode-compact/issues/29)) ([28f796a](https://github.com/iamxeph/pi-codemode-compact/commit/28f796aa20a73600514485c07ae8eccda3315856))
+
 ## [0.5.0](https://github.com/iamxeph/pi-codemode-compact/compare/v0.4.0...v0.5.0) (2026-10-24)
 
 

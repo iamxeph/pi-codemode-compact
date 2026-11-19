@@ -104,9 +104,8 @@ const SCRIPT_HEADER = /^Script (?:completed|failed)\nWall time ([\d.]+) seconds\
  * and expands tabs to 3 spaces.
  */
 export function plain(text: string): string {
-	return stripTerminalSequences(text)
-		// 8-bit CSI escape sequences not covered by stripTerminalSequences
-		.replace(/\u009b[0-9;?]*[A-Za-z]/g, "")
+	// Whole CSI sequences go first: pi-tui ends CSI only at m/G/K/H/J, so ESC[<35;59;1M or ESC[?25l would swallow the text after them
+	return stripTerminalSequences(text.replace(/(?:\x1b\[|\u009b)[0-?]*[ -/]*[@-~]/g, ""))
 		// Non-printable control characters except newline and tab
 		.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "")
 		.replace(/\r/g, "")

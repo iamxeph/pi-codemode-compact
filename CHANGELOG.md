@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.2](https://github.com/iamxeph/pi-codemode-compact/compare/v0.5.1...v0.5.2) (2026-11-26)
+
+
+### Bug Fixes
+
+* **renderer:** match Pi 1.6 readonly render() return type ([#32](https://github.com/iamxeph/pi-codemode-compact/issues/32)) ([86f47a8](https://github.com/iamxeph/pi-codemode-compact/commit/86f47a882b021f3384b866a04296b19a056e2ab9))
+
 ## [0.5.1](https://github.com/iamxeph/pi-codemode-compact/compare/v0.5.0...v0.5.1) (2026-11-19)
 
 

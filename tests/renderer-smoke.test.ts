@@ -16,7 +16,7 @@ const context = (extra: Partial<RenderContext> = {}): RenderContext => ({
 	executionStarted: false, argsComplete: true, isPartial: false, expanded: false, showImages: false,
 	isError: false, durationMs: undefined, outputPad: 1, keyText: () => "", keyHint: () => "", ...extra,
 });
-const lines = (component: { render(width: number): string[] }, width = 100) =>
+const lines = (component: { render(width: number): readonly string[] }, width = 100) =>
 	component.render(width).map((line) => plain(line).trimEnd());
 const result = { content: [{ type: "text" as const, text: header + "hello" }], details: { calls: [] } };
 const png = { type: "image" as const, mimeType: "image/png", data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jYZkAAAAASUVORK5CYII=" };
@@ -83,11 +83,13 @@ test("real Text: summaries are rebuilt only on width change or invalidate; hyphe
 	const row = renderCall({ code: "text(1);" }, theme, context(), null) as Text & { build: (w: number) => string };
 	const build = row.build;
 	row.build = (width) => { builds++; return build(width); };
-	for (let i = 0; i < 5; i++) row.render(80);
+	const first = row.render(80);
+	for (let i = 0; i < 4; i++) assert.equal(row.render(80), first, "Unchanged frames keep cached array identity");
 	assert.equal(builds, 1, "Frames at the same width reuse the summary");
-	row.render(40);
+	const resized = row.render(40);
+	assert.notEqual(resized, first, "Resize returns a new array");
 	row.invalidate();
-	row.render(40);
+	assert.notEqual(row.render(40), resized, "Invalidate returns a new array");
 	assert.equal(builds, 3, "Resize and invalidate rebuild");
 });
 
@@ -167,7 +169,7 @@ test("live clocks tick and stop on completion, errors, abort, session switch and
 	let redraws = 0;
 	const start = () => {
 		// Like Pi's host, invalidating the row also invalidates its child components.
-		let component!: { render(width: number): string[]; invalidate?(): void };
+		let component!: { render(width: number): readonly string[]; invalidate?(): void };
 		const ctx = context({ executionStarted: true, isPartial: true, invalidate: () => { redraws++; component?.invalidate?.(); } });
 		renderers.renderCall!({ code: "text(1);" }, theme, ctx);
 		ctx.state.codemodeCompactClock.startedAt = performance.now() - 4200;

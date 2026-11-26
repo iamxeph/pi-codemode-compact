@@ -493,7 +493,7 @@ class SummaryText extends Text {
 		this.builtWidth = undefined;
 	}
 
-	override render(width: number): string[] {
+	override render(width: number): readonly string[] {
 		if (width <= 0) return [];
 		const max = summaryWidth(width);
 		if (max !== this.builtWidth) {
